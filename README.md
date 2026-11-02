@@ -91,8 +91,9 @@ App runs on http://localhost:5173.
 Rules:
 
 1. Create a feature branch from `dev`.
-2. Open a Pull Request into `dev`; at least one teammate reviews it.
-3. `dev` is merged into `main` before each sprint review.
+2. Open a Pull Request into `dev`. Only the Scrum Master (Simona) merges PRs.
+3. `main` and `dev` are protected: teammates cannot push directly. `main` is updated only via Pull Request before each sprint review.
+4. Every Pull Request must pass CI (lint, build, tests) before merging.
 
 Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/):
 `feat:`, `fix:`, `chore:`, `docs:`, `test:`.
