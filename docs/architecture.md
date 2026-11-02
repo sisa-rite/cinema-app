@@ -11,18 +11,15 @@ flowchart TB
     FE[Frontend<br/>React + nginx]
     BE[Backend API<br/>Node.js + Express]
     DB[(PostgreSQL 16<br/>internal only)]
+    BE -- "port 5432" --> DB
   end
-  subgraph C[CI/CD]
-    GH[GitHub<br/>code, pull requests]
-    GA[GitHub Actions<br/>test, build, deploy]
-    DH[Docker Hub<br/>container images]
+  subgraph C[CI/CD — on every merge to main]
+    direction LR
+    GH[GitHub<br/>code, pull requests] --> GA[GitHub Actions<br/>test, build, deploy] --> DH[Docker Hub<br/>container images]
   end
   U -- HTTPS --> FE
   U -- "HTTPS, REST / JSON" --> BE
-  BE -- "port 5432" --> DB
-  GH --> GA --> DH
-  GA -- "oc rollout" --> R
-  DH -- "image pull" --> R
+  R --- |"deploy: image pull + oc rollout"| C
 ```
 
 ## 2. Logical structure
