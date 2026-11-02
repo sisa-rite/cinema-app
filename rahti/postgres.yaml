@@ -1,0 +1,61 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: cinema-db-data
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cinema-db
+  labels:
+    app: cinema-db
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: cinema-db
+  template:
+    metadata:
+      labels:
+        app: cinema-db
+    spec:
+      containers:
+        - name: postgres
+          image: quay.io/sclorg/postgresql-16-c9s
+          ports:
+            - containerPort: 5432
+          envFrom:
+            - secretRef:
+                name: cinema-db-secret
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/pgsql/data
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: cinema-db-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cinema-db
+spec:
+  selector:
+    app: cinema-db
+  ports:
+    - port: 5432
+      targetPort: 5432
