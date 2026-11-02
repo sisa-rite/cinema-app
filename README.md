@@ -17,7 +17,7 @@ Advanced Web Application Project, autumn 2026 — Team I.
 - **Frontend:** React (Vite), Tailwind CSS
 - **Backend:** Node.js, Express
 - **Database:** PostgreSQL 16
-- **Deployment:** Microsoft Azure, GitHub Actions (CI/CD)
+- **Deployment:** CSC Rahti (OpenShift), Docker Hub, GitHub Actions (CI/CD)
 
 ## Repository structure
 
@@ -100,5 +100,5 @@ Commit messages follow [Conventional Commits](https://www.conventionalcommits.or
 
 ## Links
 
-- Live app: _coming soon_
-- Trello board: _add link_
+- Live app: https://cinema-frontend-rio-cinema.2.rahtiapp.fi
+- API health check: https://cinema-backend-rio-cinema.2.rahtiapp.fi/api/health/db
