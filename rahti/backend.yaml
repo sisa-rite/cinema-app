@@ -1,0 +1,84 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cinema-backend
+  labels:
+    app: cinema-backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cinema-backend
+  template:
+    metadata:
+      labels:
+        app: cinema-backend
+    spec:
+      containers:
+        - name: backend
+          image: docker.io/shoracko26/cinema-backend:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+          env:
+            - name: PORT
+              value: "8080"
+            - name: CORS_ORIGIN
+              value: https://cinema-frontend-rio-cinema.2.rahtiapp.fi
+            - name: PGHOST
+              value: cinema-db
+            - name: PGPORT
+              value: "5432"
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: cinema-db-secret
+                  key: POSTGRESQL_USER
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: cinema-db-secret
+                  key: POSTGRESQL_PASSWORD
+            - name: PGDATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: cinema-db-secret
+                  key: POSTGRESQL_DATABASE
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cinema-backend
+spec:
+  selector:
+    app: cinema-backend
+  ports:
+    - port: 8080
+      targetPort: 8080
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: cinema-backend
+spec:
+  to:
+    kind: Service
+    name: cinema-backend
+  port:
+    targetPort: 8080
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

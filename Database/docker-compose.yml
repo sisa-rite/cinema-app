@@ -1,0 +1,17 @@
+services:
+  db:
+    image: postgres:16
+    container_name: cinema-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: cinema
+      POSTGRES_PASSWORD: cinema
+      POSTGRES_DB: cinema
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      - ./init:/docker-entrypoint-initdb.d
+
+volumes:
+  db_data:
