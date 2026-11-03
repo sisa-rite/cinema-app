@@ -25,7 +25,7 @@ Advanced Web Application Project, autumn 2026 — Team I.
 cinema-app/
 ├── Frontend/   # React app (Vite + Tailwind)
 ├── Backend/    # Express REST API
-└── Database/   # Docker Compose for local PostgreSQL + SQL init scripts
+└── Database/   # Docker Compose for local PostgreSQL
 ```
 
 ## Prerequisites
@@ -44,8 +44,9 @@ docker compose up -d
 ```
 
 PostgreSQL runs on `localhost:5432` (user `cinema`, password `cinema`, database `cinema`).
-SQL files in `Database/init` run only on the first start. To re-run them:
-`docker compose down -v && docker compose up -d` (this deletes local data).
+Tables are created automatically when the backend starts (SQL files in `Backend/migrations`).
+To run migrations manually: `cd Backend && npm run migrate`.
+To reset the local database: `docker compose down -v && docker compose up -d` (this deletes local data).
 
 ### 2. Backend
 
@@ -102,3 +103,5 @@ Commit messages follow [Conventional Commits](https://www.conventionalcommits.or
 
 - Live app: https://cinema-frontend-rio-cinema.2.rahtiapp.fi
 - API health check: https://cinema-backend-rio-cinema.2.rahtiapp.fi/api/health/db
+- Architecture: [docs/architecture.md](docs/architecture.md)
+- Database schema (ERD): [docs/erd.png](docs/erd.png)

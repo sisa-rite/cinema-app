@@ -6,6 +6,7 @@ COPY package*.json ./
 RUN npm ci --omit=dev
 
 COPY src ./src
+COPY migrations ./migrations
 
 ENV PORT=8080
 EXPOSE 8080
