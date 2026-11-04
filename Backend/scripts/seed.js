@@ -10,9 +10,9 @@ const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const MOVIES_FILE = path.join(SCRIPT_DIR, "..", "seed", "movies.json");
 const SEED_DAYS = 14;
 const SHOWTIMES = [
-  { hour: 17, minute: 0 },
-  { hour: 19, minute: 30 },
-  { hour: 21, minute: 45 },
+  { hour: 14, minute: 0 },
+  { hour: 17, minute: 30 },
+  { hour: 21, minute: 0 },
 ];
 
 function getLocalDateParts(date) {
