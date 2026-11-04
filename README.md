@@ -54,8 +54,29 @@ To reset the local database: `docker compose down -v && docker compose up -d` (t
 cd Backend
 cp .env.example .env
 npm install
+npm run migrate
+npm run fetch-movies
+npm run seed
 npm run dev
 ```
+
+`npm run fetch-movies` requires an OMDb API key in `Backend/.env` as
+`OMDB_API_KEY`. Create a free key at [omdbapi.com](https://www.omdbapi.com/)
+and keep it local; never commit it. The script writes the fixed IMDb catalog to
+`Backend/seed/movies.json`. Finnish age ratings are maintained manually there;
+OMDb's US `Rated` value is not used.
+
+The seed creates demo accounts:
+
+| Role | Email |
+| ---- | ----- |
+| Admin | `admin@rio.test` |
+| Oulu cashier | `cashier.oulu@rio.test` |
+| Tampere cashier | `cashier.tampere@rio.test` |
+
+Use the `SEED_PASSWORD` from `Backend/.env` to sign in; locally it defaults to
+`Rio-demo-2026`. To rebuild the demo data, run `npm run seed -- --reset`.
+Reset is blocked when `NODE_ENV=production`.
 
 API runs on http://localhost:3000. Health checks:
 
@@ -81,6 +102,8 @@ App runs on http://localhost:5173.
 | Backend  | `CORS_ORIGIN`  | Allowed frontend origin        |
 | Backend  | `DATABASE_URL` | PostgreSQL connection string   |
 | Backend  | `DB_SSL`       | `true` in Azure, unset locally |
+| Backend  | `OMDB_API_KEY` | Free API key used to fetch the seed movie data |
+| Backend  | `SEED_PASSWORD` | Optional password for local demo accounts |
 | Frontend | `VITE_API_URL` | Base URL of the API            |
 
 ## Git workflow

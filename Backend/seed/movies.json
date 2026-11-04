@@ -1,0 +1,92 @@
+[
+  {
+    "imdb_id": "tt15239678",
+    "title": "Dune: Part Two",
+    "description": "Paul Atreides unites with the Fremen while on a warpath of revenge against the conspirators who destroyed his family. Facing a choice between the love of his life and the fate of the universe, he endeavors to prevent a terrible fu...",
+    "duration_minutes": 166,
+    "genre": "Action, Adventure, Drama",
+    "age_rating": "K-12",
+    "poster_url": "https://m.media-amazon.com/images/M/MV5BNTc0YmQxMjEtODI5MC00NjFiLTlkMWUtOGQ5NjFmYWUyZGJhXkEyXkFqcGc@._V1_QL75_UX380_CR0,0,380,562_.jpg",
+    "trailer_url": null
+  },
+  {
+    "imdb_id": "tt22022452",
+    "title": "Inside Out 2",
+    "description": "A sequel that features Riley entering puberty and experiencing brand new, more complex emotions as a result. As Riley tries to adapt to her teenage years, her old emotions try to adapt to the possibility of being replaced.",
+    "duration_minutes": 96,
+    "genre": "Animation, Adventure, Comedy",
+    "age_rating": "K-7",
+    "poster_url": "https://m.media-amazon.com/images/M/MV5BYWY3MDE2Y2UtOTE3Zi00MGUzLTg2MTItZjE1ZWVkMGVlODRmXkEyXkFqcGc@._V1_QL75_UX380_CR0,0,380,562_.jpg",
+    "trailer_url": null
+  },
+  {
+    "imdb_id": "tt15398776",
+    "title": "Oppenheimer",
+    "description": "A dramatization of the life story of J. Robert Oppenheimer, the physicist who had a large hand in the development of the atomic bombs that brought an end to World War II.",
+    "duration_minutes": 180,
+    "genre": "Biography, Drama, History",
+    "age_rating": "K-12",
+    "poster_url": "https://m.media-amazon.com/images/M/MV5BN2JkMDc5MGQtZjg3YS00NmFiLWIyZmQtZTJmNTM5MjVmYTQ4XkEyXkFqcGc@._V1_QL75_UX380_CR0,0,380,562_.jpg",
+    "trailer_url": null
+  },
+  {
+    "imdb_id": "tt1517268",
+    "title": "Barbie",
+    "description": "Barbie and Ken are having the time of their lives in the seemingly perfect world of Barbie Land. However, when they get a chance to go to the outside world, they soon discover the joys and perils of living among regular humans.",
+    "duration_minutes": 114,
+    "genre": "Adventure, Comedy, Fantasy",
+    "age_rating": "K-7",
+    "poster_url": "https://m.media-amazon.com/images/M/MV5BYjI3NDU0ZGYtYjA2YS00Y2RlLTgwZDAtYTE2YTM5ZjE1M2JlXkEyXkFqcGc@._V1_QL75_UX380_CR0,0,380,562_.jpg",
+    "trailer_url": null
+  },
+  {
+    "imdb_id": "tt1877830",
+    "title": "The Batman",
+    "description": "When a sadistic serial killer begins murdering key political figures in Gotham, the Batman is forced to investigate the city's hidden corruption and question his family's involvement.",
+    "duration_minutes": 176,
+    "genre": "Action, Crime, Mystery",
+    "age_rating": "K-16",
+    "poster_url": "https://m.media-amazon.com/images/M/MV5BMmU5NGJlMzAtMGNmOC00YjJjLTgyMzUtNjAyYmE4Njg5YWMyXkEyXkFqcGc@._V1_QL75_UX380_CR0,0,380,562_.jpg",
+    "trailer_url": null
+  },
+  {
+    "imdb_id": "tt1630029",
+    "title": "Avatar: The Way of Water",
+    "description": "Jake Sully lives with his newfound family formed on the extrasolar moon Pandora. Once a familiar threat returns to finish what was previously started, Jake must work with Neytiri and the army of the Na'vi race to protect their home.",
+    "duration_minutes": 192,
+    "genre": "Action, Adventure, Fantasy",
+    "age_rating": "K-12",
+    "poster_url": "https://m.media-amazon.com/images/M/MV5BNWI0Y2NkOWEtMmM2OC00MjQ3LWI1YzItZGQxYzQ3NzI4NWZmXkEyXkFqcGc@._V1_QL75_UY562_CR6,0,380,562_.jpg",
+    "trailer_url": null
+  },
+  {
+    "imdb_id": "tt1745960",
+    "title": "Top Gun: Maverick",
+    "description": "The story involves Maverick confronting his past while training a group of younger Top Gun graduates, including the son of his deceased best friend, for a dangerous mission.",
+    "duration_minutes": 130,
+    "genre": "Action, Drama",
+    "age_rating": "K-12",
+    "poster_url": "https://m.media-amazon.com/images/M/MV5BMDBkZDNjMWEtOTdmMi00NmExLTg5MmMtNTFlYTJlNWY5YTdmXkEyXkFqcGc@._V1_QL75_UX380_CR0,0,380,562_.jpg",
+    "trailer_url": null
+  },
+  {
+    "imdb_id": "tt0816692",
+    "title": "Interstellar",
+    "description": "In a dystopian future where Earth has become near-uninhabitable, a team of astronauts embark on a mission to find a new home for humanity.",
+    "duration_minutes": 169,
+    "genre": "Adventure, Sci-Fi",
+    "age_rating": "K-12",
+    "poster_url": "https://m.media-amazon.com/images/M/MV5BYzdjMDAxZGItMjI2My00ODA1LTlkNzItOWFjMDU5ZDJlYWY3XkEyXkFqcGc@._V1_QL75_UX380_CR0,0,380,562_.jpg",
+    "trailer_url": null
+  },
+  {
+    "imdb_id": "tt6751668",
+    "title": "Parasite",
+    "description": "Greed and class discrimination threaten the newly formed symbiotic relationship between the wealthy Park family and the destitute Kim clan.",
+    "duration_minutes": 132,
+    "genre": "Drama, Thriller",
+    "age_rating": "K-16",
+    "poster_url": "https://m.media-amazon.com/images/M/MV5BYjk1Y2U4MjQtY2ZiNS00OWQyLWI3MmYtZWUwNmRjYWRiNWNhXkEyXkFqcGc@._V1_QL75_UX380_CR0,0,380,562_.jpg",
+    "trailer_url": null
+  }
+]
