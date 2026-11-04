@@ -83,6 +83,54 @@ API runs on http://localhost:3000. Health checks:
 - `GET /api/health`
 - `GET /api/health/db`
 
+### API
+
+Movie endpoints require the theatre city (`oulu` or `tampere`, case-insensitive):
+
+- `GET /api/movies?city=oulu` — published movies with upcoming published screenings in Oulu.
+- `GET /api/movies/:id?city=oulu` — a published movie and its upcoming published Oulu screenings.
+
+Example list response:
+
+```json
+[
+  {
+    "id": 1,
+    "title": "Dune: Part Two",
+    "description": "A movie description.",
+    "durationMinutes": 166,
+    "genre": "Action, Adventure, Drama",
+    "ageRating": "K-12",
+    "posterUrl": "https://example.com/poster.jpg"
+  }
+]
+```
+
+Example detail response:
+
+```json
+{
+  "id": 1,
+  "title": "Dune: Part Two",
+  "description": "A movie description.",
+  "durationMinutes": 166,
+  "genre": "Action, Adventure, Drama",
+  "ageRating": "K-12",
+  "posterUrl": "https://example.com/poster.jpg",
+  "trailerUrl": null,
+  "screenings": [
+    {
+      "id": 1,
+      "startsAt": "2026-11-05T12:00:00.000Z",
+      "theatreName": "Rio Oulu",
+      "hallName": "Hall 1",
+      "basePrice": 12.5,
+      "isPremiere": true
+    }
+  ]
+}
+```
+
 ### 3. Frontend
 
 ```bash
