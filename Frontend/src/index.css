@@ -1,7 +1,111 @@
 @import "tailwindcss";
 
 @theme {
-  --color-gold: #d4af37;
-  --color-rio-red: #b3121b;
-  --color-rio-black: #0b0b0b;
+  --color-rio-black: #0a0a0a;
+  --color-rio-surface: #141110;
+  --color-rio-red: #8e000b;
+  --color-rio-red-dark: #510203;
+  --color-rio-gold: #f2c46d;
+  --color-rio-gold-light: #fde8ab;
+  --color-rio-gold-deep: #d58d31;
+
+  --font-display: "Cinzel", Georgia, "Times New Roman", serif;
+
+  --shadow-rio-glow: 0 0 2rem rgb(242 196 109 / 0.3);
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    @apply bg-rio-black text-white antialiased;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-rio-gold);
+    outline-offset: 3px;
+  }
+}
+
+/* Home page logo: entrance, pulsing marquee glow and a light sweep masked to the logo shape. */
+.rio-logo {
+  position: relative;
+  display: block;
+  animation: rio-logo-enter 800ms ease-out both;
+}
+
+.rio-logo-glow {
+  position: absolute;
+  inset: -6%;
+  border-radius: 9999px;
+  background: radial-gradient(
+    closest-side,
+    rgb(242 196 109 / 0.5),
+    rgb(213 141 49 / 0.25) 65%,
+    transparent
+  );
+  filter: blur(48px);
+  animation: rio-logo-glow 4s ease-in-out infinite alternate;
+}
+
+.rio-logo::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+      110deg,
+      transparent 40%,
+      rgb(255 246 222 / 0.5) 50%,
+      transparent 60%
+    )
+    100% 0 / 250% 100% no-repeat;
+  -webkit-mask: url("./assets/rio-logo.webp") 0 0 / 100% 100% no-repeat;
+  mask: url("./assets/rio-logo.webp") 0 0 / 100% 100% no-repeat;
+  animation: rio-logo-shine 7s ease-in-out 1.2s infinite;
+}
+
+@keyframes rio-logo-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes rio-logo-glow {
+  from {
+    opacity: 0.55;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1.04);
+  }
+}
+
+@keyframes rio-logo-shine {
+  0% {
+    background-position: 100% 0;
+  }
+  25%,
+  100% {
+    background-position: 0 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rio-logo,
+  .rio-logo-glow {
+    animation: none;
+  }
+
+  .rio-logo::after {
+    display: none;
+  }
 }
