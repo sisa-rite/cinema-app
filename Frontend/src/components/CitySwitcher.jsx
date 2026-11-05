@@ -1,9 +1,9 @@
 import { Link, useSearchParams } from "react-router-dom";
-import { THEATRES } from "../config/theatres.js";
+import { THEATRES, findTheatre } from "../config/theatres.js";
 
 function CitySwitcher() {
   const [searchParams] = useSearchParams();
-  const currentCity = searchParams.get("city");
+  const currentCity = findTheatre(searchParams.get("city"))?.city;
 
   return (
     <nav aria-label="Choose cinema">

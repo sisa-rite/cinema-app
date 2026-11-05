@@ -16,5 +16,5 @@ export const THEATRES = [
 ];
 
 export function findTheatre(city) {
-  return THEATRES.find((theatre) => theatre.city === city);
+  return THEATRES.find((theatre) => theatre.city === city?.toLowerCase());
 }
