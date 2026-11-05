@@ -30,6 +30,22 @@ jobs:
     defaults:
       run:
         working-directory: Backend
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: cinema
+          POSTGRES_PASSWORD: cinema
+          POSTGRES_DB: cinema
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U cinema"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://cinema:cinema@localhost:5432/cinema
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -38,4 +54,6 @@ jobs:
           cache: npm
           cache-dependency-path: Backend/package-lock.json
       - run: npm ci
+      - run: npm run migrate
+      - run: npm run seed
       - run: npm test
