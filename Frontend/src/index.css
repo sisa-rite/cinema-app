@@ -38,12 +38,12 @@
 
 .rio-logo-glow {
   position: absolute;
-  inset: 8%;
+  inset: -6%;
   border-radius: 9999px;
   background: radial-gradient(
     closest-side,
-    rgb(242 196 109 / 0.45),
-    rgb(213 141 49 / 0.2) 60%,
+    rgb(242 196 109 / 0.5),
+    rgb(213 141 49 / 0.25) 65%,
     transparent
   );
   filter: blur(48px);
