@@ -4,6 +4,11 @@ import { migrate } from "./migrate.js";
 
 const PORT = process.env.PORT || 3000;
 
+if (!process.env.JWT_SECRET) {
+  console.error("JWT_SECRET must be set before the server can start.");
+  process.exit(1);
+}
+
 try {
   await migrate();
 } catch (err) {
