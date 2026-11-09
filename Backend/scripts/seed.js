@@ -202,16 +202,16 @@ async function seed() {
     const theatres = [];
     for (const theatre of [
       {
-        name: "Rio Oulu",
+        name: "Cinema RIO Oulu",
         city: "Oulu",
-        address: "Demo address 1, Oulu",
-        phone: "+358 40 000 0001 (demo)",
+        address: "Kauppurienkatu 45, 90100 Oulu, Finland",
+        phone: "+358 8 5542 3890",
       },
       {
-        name: "Rio Tampere",
+        name: "Cinema RIO Tampere",
         city: "Tampere",
-        address: "Demo address 2, Tampere",
-        phone: "+358 40 000 0002 (demo)",
+        address: "Hämeenkatu 27, 33100 Tampere, Finland",
+        phone: "+358 2 2641 7520",
       },
     ]) {
       const { rows } = await client.query(
