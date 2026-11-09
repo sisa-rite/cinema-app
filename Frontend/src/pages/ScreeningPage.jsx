@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useParams, useSearchParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { getScreeningSeats } from "../api/screenings.js";
 import AgeRatingBadge from "../components/AgeRatingBadge.jsx";
 import SeatLegend from "../components/SeatLegend.jsx";
@@ -76,16 +76,14 @@ function SeatSelection({ screening, seats }) {
 
 function ScreeningPage() {
   const { id } = useParams();
-  const [searchParams] = useSearchParams();
-  const hall = searchParams.get("hall") ?? undefined;
 
   const [attempt, setAttempt] = useState(0);
   const [result, setResult] = useState({ key: null, data: null, failed: false });
-  const requestKey = `${id}:${hall}#${attempt}`;
+  const requestKey = `${id}#${attempt}`;
 
   useEffect(() => {
     const controller = new AbortController();
-    getScreeningSeats(id, { hall, signal: controller.signal })
+    getScreeningSeats(id, { signal: controller.signal })
       .then((data) => setResult({ key: requestKey, data, failed: false }))
       .catch(() => {
         if (!controller.signal.aborted) {
@@ -93,7 +91,7 @@ function ScreeningPage() {
         }
       });
     return () => controller.abort();
-  }, [id, hall, requestKey]);
+  }, [id, requestKey]);
 
   if (result.key !== requestKey) {
     return (
