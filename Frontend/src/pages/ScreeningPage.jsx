@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
+import { ApiError } from "../api/client.js";
 import { getScreeningSeats } from "../api/screenings.js";
 import AgeRatingBadge from "../components/AgeRatingBadge.jsx";
 import SeatLegend from "../components/SeatLegend.jsx";
@@ -9,30 +10,74 @@ import StateMessage from "../components/StateMessage.jsx";
 import { formatDayLabel, formatTime } from "../utils/format.js";
 
 const MAX_SEATS = 10;
+const DEFAULT_TITLE = "Rio Theatres";
+const NOT_FOUND_CODES = new Set(["SCREENING_NOT_FOUND", "INVALID_ID"]);
 const CONTAINER_CLASSES = "mx-auto max-w-7xl px-4 py-8 sm:px-6";
+const TEXT_LINK_CLASSES =
+  "rounded-sm font-semibold text-rio-gold underline-offset-4 hover:underline";
 
-function SeatSelection({ screening, seats }) {
-  const [selectedIds, setSelectedIds] = useState([]);
+function SeatSelection({ initialData, initialLoadedAt }) {
+  const [data, setData] = useState({ ...initialData, loadedAt: initialLoadedAt });
+  const [selection, setSelection] = useState({ ids: [], dropped: false });
+  const [refreshStatus, setRefreshStatus] = useState("idle");
+  const refreshController = useRef(null);
+
+  const { screening, seats } = data;
   const { movie, theatre, hall } = screening;
+  const salesClosed = Date.parse(screening.startsAt) <= data.loadedAt;
+  const screeningLabel = `${formatDayLabel(screening.startsAt)} ${formatTime(screening.startsAt)}`;
 
   const selectedSeats = seats
-    .filter((seat) => selectedIds.includes(seat.id))
+    .filter((seat) => selection.ids.includes(seat.id))
     .sort((a, b) => a.rowNumber - b.rowNumber || a.seatNumber - b.seatNumber);
 
+  useEffect(() => {
+    document.title = `${movie.title} — ${screeningLabel} — ${DEFAULT_TITLE}`;
+    return () => {
+      document.title = DEFAULT_TITLE;
+    };
+  }, [movie.title, screeningLabel]);
+
+  useEffect(() => () => refreshController.current?.abort(), []);
+
   function toggleSeat(seatId) {
-    setSelectedIds((ids) => {
-      if (ids.includes(seatId)) return ids.filter((id) => id !== seatId);
-      if (ids.length >= MAX_SEATS) return ids;
-      return [...ids, seatId];
+    setSelection(({ ids, dropped }) => {
+      if (ids.includes(seatId)) return { ids: ids.filter((id) => id !== seatId), dropped };
+      if (ids.length >= MAX_SEATS) return { ids, dropped };
+      return { ids: [...ids, seatId], dropped };
     });
   }
 
+  async function refreshSeats() {
+    refreshController.current?.abort();
+    const controller = new AbortController();
+    refreshController.current = controller;
+    setRefreshStatus("loading");
+
+    try {
+      const next = await getScreeningSeats(screening.id, { signal: controller.signal });
+      const available = new Set(
+        next.seats.filter((seat) => seat.state === "available").map((seat) => seat.id),
+      );
+      setData({ ...next, loadedAt: Date.now() });
+      setSelection(({ ids }) => {
+        const kept = ids.filter((id) => available.has(id));
+        return { ids: kept, dropped: kept.length < ids.length };
+      });
+      setRefreshStatus("idle");
+    } catch {
+      if (!controller.signal.aborted) setRefreshStatus("failed");
+    }
+  }
+
+  let refreshMessage = "";
+  if (refreshStatus === "loading") refreshMessage = "Refreshing seats…";
+  else if (refreshStatus === "failed") refreshMessage = "We couldn’t refresh the seats. Please try again.";
+  else if (selection.dropped) refreshMessage = "Some of your selected seats are no longer available.";
+
   return (
     <div className={CONTAINER_CLASSES}>
-      <Link
-        to={`/movies/${movie.id}?city=${theatre.city}`}
-        className="rounded-sm text-sm font-semibold text-rio-gold underline-offset-4 hover:underline"
-      >
+      <Link to={`/movies/${movie.id}?city=${theatre.city}`} className={`text-sm ${TEXT_LINK_CLASSES}`}>
         ← Back to {movie.title}
       </Link>
 
@@ -51,24 +96,50 @@ function SeatSelection({ screening, seats }) {
         </p>
       </header>
 
-      <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start">
+      <div
+        className={`mt-8 grid gap-8 lg:items-start ${
+          salesClosed ? "" : "lg:grid-cols-[minmax(0,1fr)_20rem]"
+        }`}
+      >
         <section aria-labelledby="seat-selection-title" className="min-w-0 space-y-6">
           <h2
             id="seat-selection-title"
             className="text-center font-display text-xl font-bold text-rio-gold-light"
           >
-            Choose your seats
+            {salesClosed ? "Seat map" : "Choose your seats"}
           </h2>
+          {salesClosed ? (
+            <p className="mx-auto max-w-xl rounded-lg border border-rio-gold bg-rio-gold/10 px-4 py-3 text-center font-semibold text-rio-gold-light">
+              Sales for this screening are closed.
+            </p>
+          ) : (
+            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+              <p role="status" className="min-h-5 text-sm text-rio-gold-light">
+                {refreshMessage}
+              </p>
+              <button
+                type="button"
+                onClick={refreshSeats}
+                disabled={refreshStatus === "loading"}
+                className={`ml-auto text-sm disabled:cursor-wait disabled:opacity-60 ${TEXT_LINK_CLASSES}`}
+              >
+                Refresh seats
+              </button>
+            </div>
+          )}
           <SeatMap
             seats={seats}
-            selectedIds={selectedIds}
+            selectedIds={selection.ids}
             onToggle={toggleSeat}
             hallName={hall.name}
             maxSelected={MAX_SEATS}
+            readOnly={salesClosed}
           />
           <SeatLegend />
         </section>
-        <SelectionSummary seats={selectedSeats} basePrice={screening.basePrice} />
+        {!salesClosed && (
+          <SelectionSummary seats={selectedSeats} basePrice={screening.basePrice} />
+        )}
       </div>
     </div>
   );
@@ -76,26 +147,36 @@ function SeatSelection({ screening, seats }) {
 
 function ScreeningPage() {
   const { id } = useParams();
-  const [searchParams] = useSearchParams();
-  const hall = searchParams.get("hall") ?? undefined;
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [attempt, setAttempt] = useState(0);
-  const [result, setResult] = useState({ key: null, data: null, failed: false });
-  const requestKey = `${id}:${hall}#${attempt}`;
+  const [result, setResult] = useState({ key: null, data: null, loadedAt: null, error: null });
+  const requestKey = `${id}#${attempt}`;
+  const isLoading = result.key !== requestKey;
+  const apiCity = isLoading ? undefined : result.data?.screening.theatre.city;
+  const urlCity = searchParams.get("city");
 
   useEffect(() => {
     const controller = new AbortController();
-    getScreeningSeats(id, { hall, signal: controller.signal })
-      .then((data) => setResult({ key: requestKey, data, failed: false }))
-      .catch(() => {
+    getScreeningSeats(id, { signal: controller.signal })
+      .then((data) =>
+        setResult({ key: requestKey, data, loadedAt: Date.now(), error: null }),
+      )
+      .catch((error) => {
         if (!controller.signal.aborted) {
-          setResult({ key: requestKey, data: null, failed: true });
+          setResult({ key: requestKey, data: null, loadedAt: null, error });
         }
       });
     return () => controller.abort();
-  }, [id, hall, requestKey]);
+  }, [id, requestKey]);
 
-  if (result.key !== requestKey) {
+  useEffect(() => {
+    if (apiCity && urlCity !== apiCity) {
+      setSearchParams({ city: apiCity }, { replace: true });
+    }
+  }, [apiCity, urlCity, setSearchParams]);
+
+  if (isLoading) {
     return (
       <div className={CONTAINER_CLASSES}>
         <p role="status" className="sr-only">
@@ -106,7 +187,24 @@ function ScreeningPage() {
     );
   }
 
-  if (result.failed) {
+  if (result.error) {
+    const isNotFound =
+      result.error instanceof ApiError && NOT_FOUND_CODES.has(result.error.code);
+
+    if (isNotFound) {
+      return (
+        <StateMessage title="Screening not found" headingAs="h1">
+          <p className="text-white/75">
+            This screening is not available. It may have been removed from the
+            programme.
+          </p>
+          <Link to="/" className={TEXT_LINK_CLASSES}>
+            Back to the home page →
+          </Link>
+        </StateMessage>
+      );
+    }
+
     return (
       <StateMessage title="We couldn’t load the seats" headingAs="h1" role="alert">
         <p className="text-white/75">
@@ -127,8 +225,8 @@ function ScreeningPage() {
   return (
     <SeatSelection
       key={requestKey}
-      screening={result.data.screening}
-      seats={result.data.seats}
+      initialData={result.data}
+      initialLoadedAt={result.loadedAt}
     />
   );
 }
