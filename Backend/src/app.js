@@ -2,12 +2,14 @@ import express from "express";
 import cors from "cors";
 import pool from "./db.js";
 import moviesRouter from "./modules/movies/movies.routes.js";
+import screeningsRouter from "./modules/screenings/screenings.routes.js";
 
 const app = express();
 
 app.use(cors({ origin: process.env.CORS_ORIGIN || "http://localhost:5173" }));
 app.use(express.json());
 app.use("/api/movies", moviesRouter);
+app.use("/api/screenings", screeningsRouter);
 
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", time: new Date().toISOString() });
