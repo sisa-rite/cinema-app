@@ -188,14 +188,9 @@ function MovieDetailPage() {
             </Link>
           </div>
         ) : (
-          <>
-            <div className="mt-6">
-              <ScreeningList screenings={movie.screenings} />
-            </div>
-            <p className="mt-8 text-sm text-white/60">
-              Seat selection is coming soon.
-            </p>
-          </>
+          <div className="mt-6">
+            <ScreeningList screenings={movie.screenings} city={theatre.city} />
+          </div>
         )}
       </section>
     </>
