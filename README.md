@@ -152,6 +152,7 @@ App runs on http://localhost:5173.
 | Backend  | `DB_SSL`       | `true` in Azure, unset locally |
 | Backend  | `OMDB_API_KEY` | Free API key used to fetch the seed movie data |
 | Backend  | `SEED_PASSWORD` | Optional password for local demo accounts |
+| Backend  | `JWT_SECRET` | Required strong secret used to sign authentication tokens |
 | Frontend | `VITE_API_URL` | Base URL of the API            |
 
 ## Git workflow
