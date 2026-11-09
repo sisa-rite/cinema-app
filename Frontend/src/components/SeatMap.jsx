@@ -39,9 +39,9 @@ function Entrance({ gridColumn, align }) {
   );
 }
 
-function SeatMap({ seats, selectedIds, onToggle, hallName, maxSelected = 10 }) {
+function SeatMap({ seats, selectedIds, onToggle, hallName, maxSelected = 10, readOnly = false }) {
   const selected = new Set(selectedIds);
-  const limitReached = selected.size >= maxSelected;
+  const limitReached = !readOnly && selected.size >= maxSelected;
   const columns = Math.max(...seats.map((seat) => seat.posX));
   const rows = Math.max(...seats.map((seat) => seat.posY));
   const rowNumbers = new Map(seats.map((seat) => [seat.posY, seat.rowNumber]));
@@ -100,7 +100,7 @@ function SeatMap({ seats, selectedIds, onToggle, hallName, maxSelected = 10 }) {
             const isSelected = selected.has(seat.id);
             const visualState = isSelected ? "selected" : seat.state;
             const isBlockedByLimit = seat.state === "available" && !isSelected && limitReached;
-            const isDisabled = seat.state !== "available" || isBlockedByLimit;
+            const isDisabled = readOnly || seat.state !== "available" || isBlockedByLimit;
 
             return (
               <button
@@ -113,7 +113,7 @@ function SeatMap({ seats, selectedIds, onToggle, hallName, maxSelected = 10 }) {
                   "--row": seat.posY - 1,
                 }}
                 aria-label={`Row ${seat.rowNumber}, seat ${seat.seatNumber}, ${STATE_LABELS[visualState]}`}
-                title={seat.state === "owner" ? "Reserved for the owner" : undefined}
+                title={!readOnly && seat.state === "owner" ? "Reserved for the owner" : undefined}
                 disabled={isDisabled}
                 aria-disabled={isDisabled || undefined}
                 onClick={() => onToggle(seat.id)}
