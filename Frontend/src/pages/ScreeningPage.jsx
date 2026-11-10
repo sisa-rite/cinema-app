@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useParams, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { createBooking } from "../api/bookings.js";
 import { ApiError } from "../api/client.js";
 import { getScreeningSeats } from "../api/screenings.js";
 import AgeRatingBadge from "../components/AgeRatingBadge.jsx";
@@ -7,6 +8,7 @@ import SeatLegend from "../components/SeatLegend.jsx";
 import SeatMap from "../components/SeatMap.jsx";
 import SelectionSummary from "../components/SelectionSummary.jsx";
 import StateMessage from "../components/StateMessage.jsx";
+import { saveBookingEmail } from "../utils/bookingStorage.js";
 import { formatDayLabel, formatTime } from "../utils/format.js";
 
 const MAX_SEATS = 10;
@@ -15,21 +17,37 @@ const NOT_FOUND_CODES = new Set(["SCREENING_NOT_FOUND", "INVALID_ID"]);
 const CONTAINER_CLASSES = "mx-auto max-w-7xl px-4 py-8 sm:px-6";
 const TEXT_LINK_CLASSES =
   "rounded-sm font-semibold text-rio-gold underline-offset-4 hover:underline";
+const IDLE_HOLD = { submitting: false, fieldErrors: {}, alert: null };
+
+const bySeatPosition = (a, b) => a.rowNumber - b.rowNumber || a.seatNumber - b.seatNumber;
+const seatLabel = (seat) => `Row ${seat.rowNumber} · Seat ${seat.seatNumber}`;
+
+function takenSeatsMessage(seats, takenIds) {
+  const taken = new Set(takenIds);
+  const names = seats.filter((seat) => taken.has(seat.id)).sort(bySeatPosition).map(seatLabel);
+  if (names.length === 0) return "Sorry, someone was faster: some of your seats are no longer available.";
+  const verb = names.length === 1 ? "is" : "are";
+  return `Sorry, someone was faster: ${names.join(", ")} ${verb} no longer available.`;
+}
 
 function SeatSelection({ initialData, initialLoadedAt }) {
   const [data, setData] = useState({ ...initialData, loadedAt: initialLoadedAt });
   const [selection, setSelection] = useState({ ids: [], dropped: false });
   const [refreshStatus, setRefreshStatus] = useState("idle");
+  const [hold, setHold] = useState(IDLE_HOLD);
+  const [serverClosed, setServerClosed] = useState(false);
   const refreshController = useRef(null);
+  const holdPending = useRef(false);
+  const navigate = useNavigate();
 
   const { screening, seats } = data;
   const { movie, theatre, hall } = screening;
-  const salesClosed = Date.parse(screening.startsAt) <= data.loadedAt;
+  const salesClosed = serverClosed || Date.parse(screening.startsAt) <= data.loadedAt;
   const screeningLabel = `${formatDayLabel(screening.startsAt)} ${formatTime(screening.startsAt)}`;
 
   const selectedSeats = seats
     .filter((seat) => selection.ids.includes(seat.id))
-    .sort((a, b) => a.rowNumber - b.rowNumber || a.seatNumber - b.seatNumber);
+    .sort(bySeatPosition);
 
   useEffect(() => {
     document.title = `${movie.title} — ${screeningLabel} — ${DEFAULT_TITLE}`;
@@ -41,6 +59,7 @@ function SeatSelection({ initialData, initialLoadedAt }) {
   useEffect(() => () => refreshController.current?.abort(), []);
 
   function toggleSeat(seatId) {
+    setHold((current) => (current.alert ? { ...current, alert: null } : current));
     setSelection(({ ids, dropped }) => {
       if (ids.includes(seatId)) return { ids: ids.filter((id) => id !== seatId), dropped };
       if (ids.length >= MAX_SEATS) return { ids, dropped };
@@ -67,6 +86,42 @@ function SeatSelection({ initialData, initialLoadedAt }) {
       setRefreshStatus("idle");
     } catch {
       if (!controller.signal.aborted) setRefreshStatus("failed");
+    }
+  }
+
+  async function holdSeats(email) {
+    if (holdPending.current) return;
+    holdPending.current = true;
+    setHold({ ...IDLE_HOLD, submitting: true });
+
+    try {
+      const booking = await createBooking({
+        screeningId: screening.id,
+        seatIds: selectedSeats.map((seat) => seat.id),
+        email,
+      });
+      saveBookingEmail(booking.reference, email);
+      navigate(`/checkout/${encodeURIComponent(booking.reference)}?city=${theatre.city}`);
+    } catch (error) {
+      holdPending.current = false;
+      const code = error instanceof ApiError ? error.code : null;
+
+      if (code === "SALES_CLOSED") {
+        setHold(IDLE_HOLD);
+        setServerClosed(true);
+      } else if (code === "SEATS_UNAVAILABLE") {
+        const takenIds = error.details?.seatIds ?? [];
+        setHold({ ...IDLE_HOLD, alert: { text: takenSeatsMessage(seats, takenIds), retry: false } });
+        setSelection(({ ids }) => ({ ids: ids.filter((id) => !takenIds.includes(id)), dropped: false }));
+        refreshSeats();
+      } else if (code === "VALIDATION_ERROR" && (error.details?.fields?.email || error.details?.fields?.seatIds)) {
+        setHold({ ...IDLE_HOLD, fieldErrors: error.details.fields });
+      } else {
+        setHold({
+          ...IDLE_HOLD,
+          alert: { text: "We couldn’t hold your seats. Please try again.", retry: true },
+        });
+      }
     }
   }
 
@@ -138,7 +193,14 @@ function SeatSelection({ initialData, initialLoadedAt }) {
           <SeatLegend />
         </section>
         {!salesClosed && (
-          <SelectionSummary seats={selectedSeats} basePrice={screening.basePrice} />
+          <SelectionSummary
+            seats={selectedSeats}
+            basePrice={screening.basePrice}
+            onHold={holdSeats}
+            submitting={hold.submitting}
+            fieldErrors={hold.fieldErrors}
+            alert={hold.alert}
+          />
         )}
       </div>
     </div>
