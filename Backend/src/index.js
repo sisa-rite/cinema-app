@@ -1,6 +1,7 @@
 import "dotenv/config";
 import app from "./app.js";
 import { migrate } from "./migrate.js";
+import { startExpiryJob } from "./jobs/expiry.js";
 
 const PORT = process.env.PORT || 3000;
 
@@ -15,6 +16,8 @@ try {
   console.error(err.message);
   process.exit(1);
 }
+
+startExpiryJob();
 
 app.listen(PORT, () => {
   console.log(`API running on http://localhost:${PORT}`);
