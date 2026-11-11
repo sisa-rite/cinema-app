@@ -52,10 +52,9 @@ To reset the local database: `docker compose down -v && docker compose up -d` (t
 
 ```bash
 cd Backend
-cp .env.example .env
 npm install
+npm run setup
 npm run migrate
-npm run fetch-movies
 npm run seed
 npm run dev
 ```
@@ -148,11 +147,11 @@ App runs on http://localhost:5173.
 | -------- | --------------- | --------------------------------------------------------- |
 | Backend  | `PORT`          | API port (default 3000)                                   |
 | Backend  | `CORS_ORIGIN`   | Allowed frontend origin                                   |
-| Backend  | `DATABASE_URL`  | PostgreSQL connection string                              |
+| Backend  | `DATABASE_URL`  | PostgreSQL connection string; optional locally (defaults to localhost) |
 | Backend  | `DB_SSL`        | `true` in Azure, unset locally                            |
 | Backend  | `OMDB_API_KEY`  | Free API key used to fetch the seed movie data            |
 | Backend  | `SEED_PASSWORD` | Optional password for local demo accounts                 |
-| Backend  | `JWT_SECRET`    | Required strong secret used to sign authentication tokens |
+| Backend  | `JWT_SECRET`    | Required to sign authentication tokens; created by `npm run setup` locally |
 | Frontend | `VITE_API_URL`  | Base URL of the API                                       |
 
 ## Git workflow

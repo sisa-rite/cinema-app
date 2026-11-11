@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "test": "node --test --test-concurrency=1",
+    "setup": "node scripts/setup-env.js",
     "dev": "node --watch src/index.js",
     "start": "node src/index.js",
     "migrate": "node src/migrate-cli.js",
