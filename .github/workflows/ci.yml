@@ -77,7 +77,7 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
-      DATABASE_URL: postgres://cinema:cinema@localhost:5432/cinema
+      DATABASE_URL: postgres://cinema:cinema@127.0.0.1:5432/cinema
       JWT_SECRET: ci-only-secret
     steps:
       - uses: actions/checkout@v4
@@ -97,10 +97,16 @@ jobs:
           npm run seed
       - name: Backend — start
         working-directory: Backend
-        run: npm start &
+        run: npm start > backend.log 2>&1 &
         env:
           PORT: 3000
-          CORS_ORIGIN: http://localhost:4173
+          CORS_ORIGIN: http://127.0.0.1:4173
+      - name: Backend — wait until ready
+        working-directory: Backend
+        run: |
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:3000/api/health/db && exit 0; sleep 2; done
+          cat backend.log
+          exit 1
 
       - name: Frontend — install and build
         working-directory: Frontend
@@ -108,16 +114,17 @@ jobs:
           npm ci
           npm run build
         env:
-          VITE_API_URL: http://localhost:3000
+          VITE_API_URL: http://127.0.0.1:3000
 
       - name: Cypress
         uses: cypress-io/github-action@v6
         with:
           working-directory: Frontend
           install: false
-          start: npm run preview -- --port 4173 --strictPort
-          wait-on: 'http://localhost:4173, http://localhost:3000/api/health/db'
-          config: baseUrl=http://localhost:4173
+          start: npm run preview -- --host 127.0.0.1 --port 4173 --strictPort
+          wait-on: 'http://127.0.0.1:4173, http://127.0.0.1:3000/api/health/db'
+          wait-on-timeout: 120
+          config: baseUrl=http://127.0.0.1:4173
 
       - name: Upload Cypress screenshots
         if: failure()
@@ -126,3 +133,8 @@ jobs:
           name: cypress-screenshots
           path: Frontend/cypress/screenshots
           if-no-files-found: ignore
+
+      - name: Print backend log
+        if: failure()
+        working-directory: Backend
+        run: cat backend.log
