@@ -6,7 +6,7 @@ import { startExpiryJob } from "./jobs/expiry.js";
 const PORT = process.env.PORT || 3000;
 
 if (!process.env.JWT_SECRET) {
-  console.error("JWT_SECRET must be set before the server can start.");
+  console.error('JWT_SECRET is not set. Run "npm run setup" in Backend/ for local development.');
   process.exit(1);
 }
 
