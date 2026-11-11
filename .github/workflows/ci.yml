@@ -115,15 +115,20 @@ jobs:
           npm run build
         env:
           VITE_API_URL: http://127.0.0.1:3000
+      - name: Frontend — start
+        working-directory: Frontend
+        run: npm run preview -- --host 127.0.0.1 --port 4173 --strictPort > preview.log 2>&1 &
+      - name: Frontend — wait until ready
+        run: |
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:4173 > /dev/null && exit 0; sleep 2; done
+          cat Frontend/preview.log
+          exit 1
 
       - name: Cypress
         uses: cypress-io/github-action@v6
         with:
           working-directory: Frontend
           install: false
-          start: npm run preview -- --host 127.0.0.1 --port 4173 --strictPort
-          wait-on: 'http://127.0.0.1:4173, http://127.0.0.1:3000/api/health/db'
-          wait-on-timeout: 120
           config: baseUrl=http://127.0.0.1:4173
 
       - name: Upload Cypress screenshots
@@ -134,7 +139,8 @@ jobs:
           path: Frontend/cypress/screenshots
           if-no-files-found: ignore
 
-      - name: Print backend log
+      - name: Print server logs
         if: failure()
-        working-directory: Backend
-        run: cat backend.log
+        run: |
+          cat Backend/backend.log || true
+          cat Frontend/preview.log || true
