@@ -77,7 +77,7 @@ function CopyReference({ reference }) {
   return (
     <div className="space-y-1">
       <div className="flex flex-wrap items-center gap-3">
-        <p className="font-mono text-3xl font-bold tracking-widest text-rio-gold sm:text-4xl">
+        <p data-testid="booking-reference" className="font-mono text-3xl font-bold tracking-widest text-rio-gold sm:text-4xl">
           {reference}
         </p>
         <button
@@ -143,7 +143,7 @@ function HeldBooking({ booking, screening }) {
             }`}
           >
             Your seats are held for{" "}
-            <span className="font-mono tabular-nums">{formatRemaining(remainingSeconds)}</span>
+            <span data-testid="hold-countdown" className="font-mono tabular-nums">{formatRemaining(remainingSeconds)}</span>
           </p>
 
           <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start">
