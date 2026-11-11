@@ -44,6 +44,11 @@ spec:
                 secretKeyRef:
                   name: cinema-db-secret
                   key: POSTGRESQL_DATABASE
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: cinema-backend-secret
+                  key: JWT_SECRET
           readinessProbe:
             httpGet:
               path: /api/health

@@ -5,7 +5,7 @@ import { getMovie } from "../api/movies.js";
 import AgeRatingBadge from "../components/AgeRatingBadge.jsx";
 import MovieDetailSkeleton from "../components/MovieDetailSkeleton.jsx";
 import Poster from "../components/Poster.jsx";
-import ScreeningList from "../components/ScreeningList.jsx";
+import ScreeningPicker from "../components/ScreeningPicker.jsx";
 import StateMessage from "../components/StateMessage.jsx";
 import { THEATRES, findTheatre } from "../config/theatres.js";
 import { formatDuration } from "../utils/format.js";
@@ -188,14 +188,9 @@ function MovieDetailPage() {
             </Link>
           </div>
         ) : (
-          <>
-            <div className="mt-6">
-              <ScreeningList screenings={movie.screenings} />
-            </div>
-            <p className="mt-8 text-sm text-white/60">
-              Seat selection is coming soon.
-            </p>
-          </>
+          <div className="mt-6">
+            <ScreeningPicker screenings={movie.screenings} city={theatre.city} />
+          </div>
         )}
       </section>
     </>

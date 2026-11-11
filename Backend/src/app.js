@@ -1,13 +1,19 @@
 import express from "express";
 import cors from "cors";
 import pool from "./db.js";
+import authRouter from "./modules/auth/auth.routes.js";
 import moviesRouter from "./modules/movies/movies.routes.js";
+import screeningsRouter from "./modules/screenings/screenings.routes.js";
+import bookingsRouter from "./modules/bookings/bookings.routes.js";
 
 const app = express();
 
 app.use(cors({ origin: process.env.CORS_ORIGIN || "http://localhost:5173" }));
 app.use(express.json());
+app.use("/api/auth", authRouter);
 app.use("/api/movies", moviesRouter);
+app.use("/api/screenings", screeningsRouter);
+app.use("/api/bookings", bookingsRouter);
 
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", time: new Date().toISOString() });
@@ -30,9 +36,9 @@ app.use((req, res) => {
 
 app.use((err, req, res, _next) => {
   if (Number.isInteger(err.status) && err.code) {
-    res.status(err.status).json({
-      error: { code: err.code, message: err.message },
-    });
+    const error = { code: err.code, message: err.message };
+    if (err.details) error.details = err.details;
+    res.status(err.status).json({ error });
     return;
   }
 

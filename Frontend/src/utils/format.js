@@ -21,6 +21,24 @@ const dayLabelFormatter = new Intl.DateTimeFormat("en-GB", {
   month: "short",
 });
 
+const weekdayShortFormatter = new Intl.DateTimeFormat("en-GB", {
+  timeZone: TIME_ZONE,
+  weekday: "short",
+});
+
+const fullDateFormatter = new Intl.DateTimeFormat("en-GB", {
+  timeZone: TIME_ZONE,
+  weekday: "long",
+  day: "numeric",
+  month: "long",
+});
+
+const monthYearFormatter = new Intl.DateTimeFormat("en-GB", {
+  timeZone: TIME_ZONE,
+  month: "long",
+  year: "numeric",
+});
+
 const priceFormatter = new Intl.NumberFormat("fi-FI", {
   style: "currency",
   currency: "EUR",
@@ -47,16 +65,56 @@ export function getDayKey(iso) {
   return `${parts.year}-${parts.month}-${parts.day}`;
 }
 
+function addDays(dayKey, days) {
+  const date = new Date(`${dayKey}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+// Noon UTC falls on the same calendar day in Helsinki all year round.
+function dayKeyToDate(dayKey) {
+  return new Date(`${dayKey}T12:00:00Z`);
+}
+
+export function getUpcomingDayKeys(count, now = new Date()) {
+  const todayKey = getDayKey(now);
+  return Array.from({ length: count }, (_, index) => addDays(todayKey, index));
+}
+
 export function formatDayLabel(iso, now = new Date()) {
   const dayKey = getDayKey(iso);
   const todayKey = getDayKey(now);
   if (dayKey === todayKey) return "Today";
-
-  const tomorrow = new Date(`${todayKey}T00:00:00Z`);
-  tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
-  if (dayKey === tomorrow.toISOString().slice(0, 10)) return "Tomorrow";
-
+  if (dayKey === addDays(todayKey, 1)) return "Tomorrow";
   return dayLabelFormatter.format(new Date(iso));
+}
+
+export function formatWeekdayShort(dayKey) {
+  return weekdayShortFormatter.format(dayKeyToDate(dayKey));
+}
+
+export function formatFullDate(dayKey) {
+  return fullDateFormatter.format(dayKeyToDate(dayKey));
+}
+
+export function formatMonthYear(dayKey) {
+  return monthYearFormatter.format(dayKeyToDate(dayKey));
+}
+
+export function getMonthGrid(monthKey) {
+  const [year, month] = monthKey.split("-").map(Number);
+  const firstKey = `${monthKey}-01`;
+  const leadingBlanks = (dayKeyToDate(firstKey).getUTCDay() + 6) % 7;
+  const dayCount = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return [
+    ...Array(leadingBlanks).fill(null),
+    ...Array.from({ length: dayCount }, (_, index) => addDays(firstKey, index)),
+  ];
+}
+
+export function addMonths(monthKey, months) {
+  const [year, month] = monthKey.split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1 + months, 1)).toISOString().slice(0, 7);
 }
 
 export function formatPrice(amount) {
