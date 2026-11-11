@@ -58,6 +58,7 @@ function SeatMap({ seats, selectedIds, onToggle, hallName, maxSelected = 10, rea
         <div
           role="group"
           aria-label={`Seat map, ${hallName}`}
+          data-testid="seat-map"
           aria-describedby="seat-map-hint"
           className="seat-map-grid mx-auto"
           style={{ "--columns": columns, "--rows": rows }}
@@ -137,6 +138,7 @@ function SeatMap({ seats, selectedIds, onToggle, hallName, maxSelected = 10, rea
 
           <div
             aria-hidden="true"
+            data-testid="screen"
             className="pt-4"
             style={{ gridColumn: `3 / span ${columns}`, gridRow: screenRow }}
           >
