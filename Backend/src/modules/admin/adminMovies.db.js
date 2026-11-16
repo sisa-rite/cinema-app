@@ -51,7 +51,29 @@ export async function insertAdminMovie({
   return rows[0].id;
 }
 
-export async function updateAdminMovie(id, fields) {
+export async function lockAdminMovie(client, id) {
+  const { rows } = await client.query(
+    "SELECT published FROM movies WHERE id = $1 FOR UPDATE",
+    [id],
+  );
+  return rows[0] ?? null;
+}
+
+export async function hasUpcomingTickets(client, movieId) {
+  const { rows } = await client.query(
+    `SELECT EXISTS (
+       SELECT 1
+       FROM screenings
+       JOIN tickets ON tickets.screening_id = screenings.id
+       WHERE screenings.movie_id = $1
+         AND screenings.starts_at > NOW()
+     ) AS has_tickets`,
+    [movieId],
+  );
+  return rows[0].has_tickets;
+}
+
+export async function updateAdminMovie(client, id, fields) {
   const columnNames = {
     title: "title",
     description: "description",
@@ -67,7 +89,7 @@ export async function updateAdminMovie(id, fields) {
     ([field], index) => `${columnNames[field]} = $${index + 2}`,
   );
   const values = entries.map(([, value]) => value);
-  const { rowCount } = await pool.query(
+  const { rowCount } = await client.query(
     `UPDATE movies
      SET ${assignments.join(", ")}
      WHERE id = $1`,

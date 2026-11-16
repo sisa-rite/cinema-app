@@ -1,7 +1,10 @@
+import pool from "../../db.js";
 import {
   findAdminMovie,
+  hasUpcomingTickets,
   insertAdminMovie,
   listAdminMovies,
+  lockAdminMovie,
   updateAdminMovie,
 } from "./adminMovies.db.js";
 
@@ -207,11 +210,31 @@ export async function createMovie(body) {
 export async function updateMovie(pathId, body) {
   const id = parsePathId(pathId);
   const changes = validateMovieFields(body);
-  if (
-    Object.keys(changes).length > 0 &&
-    !(await updateAdminMovie(id, changes))
-  ) {
-    throw movieNotFound();
+  if (Object.keys(changes).length > 0) {
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const current = await lockAdminMovie(client, id);
+      if (!current) throw movieNotFound();
+      if (
+        changes.published === false &&
+        current.published &&
+        (await hasUpcomingTickets(client, id))
+      ) {
+        throw new AdminMoviesServiceError(
+          409,
+          "MOVIE_HAS_BOOKINGS",
+          "The movie has upcoming screenings with tickets and cannot be hidden.",
+        );
+      }
+      await updateAdminMovie(client, id, changes);
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
   }
   const movie = await findAdminMovie(id);
   if (!movie) throw movieNotFound();

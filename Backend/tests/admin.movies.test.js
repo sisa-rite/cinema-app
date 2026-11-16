@@ -8,9 +8,23 @@ import pool from "../src/db.js";
 const hasDatabase = Boolean(process.env.DATABASE_URL);
 const createdMovieIds = [];
 const createdScreeningIds = [];
+const createdReferences = [];
 let customerEmail;
 
 after(async () => {
+  if (createdReferences.length > 0) {
+    await pool.query(
+      `DELETE FROM tickets
+       WHERE booking_id IN (
+         SELECT id FROM bookings WHERE reference = ANY($1::varchar[])
+       )`,
+      [createdReferences],
+    );
+    await pool.query(
+      "DELETE FROM bookings WHERE reference = ANY($1::varchar[])",
+      [createdReferences],
+    );
+  }
   if (createdScreeningIds.length > 0) {
     await pool.query("DELETE FROM screenings WHERE id = ANY($1::integer[])", [
       createdScreeningIds,
@@ -253,6 +267,69 @@ test(
             (left, right) => left.localeCompare(right),
           ),
         );
+      },
+    );
+
+    await t.test(
+      "hides a published movie whose screenings have no tickets",
+      async () => {
+        const hidden = await request(app)
+          .patch(`/api/admin/movies/${movie.id}`)
+          .set("Authorization", `Bearer ${adminToken}`)
+          .send({ published: false });
+        assert.equal(hidden.status, 200);
+        assert.equal(hidden.body.published, false);
+
+        const republished = await request(app)
+          .patch(`/api/admin/movies/${movie.id}`)
+          .set("Authorization", `Bearer ${adminToken}`)
+          .send({ published: true });
+        assert.equal(republished.status, 200);
+        movie = republished.body;
+      },
+    );
+
+    await t.test(
+      "does not hide a movie with tickets for an upcoming screening",
+      async () => {
+        const seats = await pool.query(
+          `SELECT id FROM seats
+           WHERE hall_id = $1 AND type = 'normal'
+           ORDER BY id
+           LIMIT 1`,
+          [hallId],
+        );
+        assert.equal(seats.rows.length, 1);
+        const hold = await request(app)
+          .post("/api/bookings")
+          .send({
+            screeningId: createdScreeningIds[0],
+            seatIds: [seats.rows[0].id],
+            email: "fr011-guest@example.test",
+          });
+        assert.equal(hold.status, 201);
+        createdReferences.push(hold.body.reference);
+
+        const hidden = await request(app)
+          .patch(`/api/admin/movies/${movie.id}`)
+          .set("Authorization", `Bearer ${adminToken}`)
+          .send({ published: false });
+        assert.equal(hidden.status, 409);
+        assert.equal(hidden.body.error.code, "MOVIE_HAS_BOOKINGS");
+
+        const details = await request(app)
+          .get(`/api/admin/movies/${movie.id}`)
+          .set("Authorization", `Bearer ${adminToken}`);
+        assert.equal(details.status, 200);
+        assert.equal(details.body.published, true);
+
+        const renamed = await request(app)
+          .patch(`/api/admin/movies/${movie.id}`)
+          .set("Authorization", `Bearer ${adminToken}`)
+          .send({ title: `${movie.title} renamed` });
+        assert.equal(renamed.status, 200);
+        assert.equal(renamed.body.title, `${movie.title} renamed`);
+        assert.equal(renamed.body.published, true);
       },
     );
   },
