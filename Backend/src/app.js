@@ -5,6 +5,7 @@ import authRouter from "./modules/auth/auth.routes.js";
 import moviesRouter from "./modules/movies/movies.routes.js";
 import screeningsRouter from "./modules/screenings/screenings.routes.js";
 import bookingsRouter from "./modules/bookings/bookings.routes.js";
+import adminRouter from "./modules/admin/admin.routes.js";
 
 const app = express();
 
@@ -14,6 +15,7 @@ app.use("/api/auth", authRouter);
 app.use("/api/movies", moviesRouter);
 app.use("/api/screenings", screeningsRouter);
 app.use("/api/bookings", bookingsRouter);
+app.use("/api/admin", adminRouter);
 
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", time: new Date().toISOString() });
