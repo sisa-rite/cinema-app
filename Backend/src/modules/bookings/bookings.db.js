@@ -110,14 +110,56 @@ export async function findBookingByReferenceAndEmail(reference, email) {
             END AS response_status,
             booking.screening_id, booking.guest_email,
             booking.hold_expires_at, booking.total_price,
+            payment.paid_at,
             ticket.seat_id, seat.row_number, seat.seat_number
      FROM bookings AS booking
      LEFT JOIN tickets AS ticket ON ticket.booking_id = booking.id
      LEFT JOIN seats AS seat ON seat.id = ticket.seat_id
+     LEFT JOIN payments AS payment ON payment.booking_id = booking.id
      WHERE booking.reference = $1
        AND LOWER(booking.guest_email) = LOWER($2)
      ORDER BY seat.row_number NULLS LAST, seat.seat_number NULLS LAST`,
     [reference, email],
+  );
+  return rows;
+}
+
+export async function lockBookingForPayment(client, reference, email) {
+  const { rows } = await client.query(
+    `SELECT id, reference, status, screening_id, guest_email,
+            hold_expires_at, total_price,
+            hold_expires_at <= now() AS hold_expired
+     FROM bookings
+     WHERE reference = $1 AND lower(guest_email) = lower($2)
+     FOR UPDATE`,
+    [reference, email],
+  );
+  return rows[0] ?? null;
+}
+
+export async function isScreeningSalesClosed(client, screeningId) {
+  const { rows } = await client.query(
+    "SELECT starts_at <= now() AS sales_closed FROM screenings WHERE id = $1",
+    [screeningId],
+  );
+  if (!rows[0]) throw new Error("The booking screening was not found.");
+  return rows[0].sales_closed;
+}
+
+export async function findBookingResponseById(client, bookingId) {
+  const { rows } = await client.query(
+    `SELECT booking.id, booking.reference, booking.status,
+            booking.screening_id, booking.guest_email,
+            booking.hold_expires_at, booking.total_price,
+            payment.paid_at,
+            ticket.seat_id, seat.row_number, seat.seat_number
+     FROM bookings AS booking
+     LEFT JOIN tickets AS ticket ON ticket.booking_id = booking.id
+     LEFT JOIN seats AS seat ON seat.id = ticket.seat_id
+     LEFT JOIN payments AS payment ON payment.booking_id = booking.id
+     WHERE booking.id = $1
+     ORDER BY seat.row_number NULLS LAST, seat.seat_number NULLS LAST`,
+    [bookingId],
   );
   return rows;
 }
