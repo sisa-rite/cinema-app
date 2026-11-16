@@ -308,7 +308,7 @@ test(
       .get(`/api/bookings/${hold.body.reference}`)
       .query({ email: "GUEST@example.com" });
     assert.equal(correctEmail.status, 200);
-    assert.deepEqual(correctEmail.body, hold.body);
+    assert.deepEqual(correctEmail.body, { ...hold.body, paidAt: null });
 
     const wrongEmail = await request(app)
       .get(`/api/bookings/${hold.body.reference}`)

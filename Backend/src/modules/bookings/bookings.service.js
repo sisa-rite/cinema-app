@@ -3,11 +3,14 @@ import pool from "../../db.js";
 import {
   deleteTicketsForBookings,
   expireScreeningHolds,
+  findBookingResponseById,
   findBookingByReferenceAndEmail,
   findPublishedScreening,
   findRequestedSeats,
   insertBooking,
   insertTickets,
+  isScreeningSalesClosed,
+  lockBookingForPayment,
 } from "./bookings.db.js";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -67,6 +70,25 @@ function validateBookingBody(body) {
   };
 }
 
+function validatePaymentBody(body) {
+  if (!body || typeof body !== "object" || Array.isArray(body)) body = {};
+
+  const fields = {};
+  if (
+    typeof body.email !== "string" ||
+    body.email.length > 254 ||
+    !EMAIL_PATTERN.test(body.email)
+  ) {
+    fields.email = "Invalid e-mail address";
+  }
+  if (body.acceptNoRefund !== true) {
+    fields.acceptNoRefund = "Confirm that paid tickets cannot be refunded";
+  }
+  if (Object.keys(fields).length > 0) throw validationError(fields);
+
+  return { email: body.email.toLowerCase() };
+}
+
 function generateReference() {
   let suffix = "";
   for (let index = 0; index < 6; index += 1) {
@@ -108,8 +130,8 @@ async function insertBookingWithReference(
   }
 }
 
-function toBookingResponse(booking, seats) {
-  return {
+function toBookingResponse(booking, seats, includePaidAt = false) {
+  const response = {
     id: booking.id,
     reference: booking.reference,
     status: booking.response_status ?? booking.status,
@@ -127,6 +149,12 @@ function toBookingResponse(booking, seats) {
       })),
     totalPrice: Number(booking.total_price),
   };
+  if (includePaidAt) {
+    response.paidAt = booking.paid_at
+      ? new Date(booking.paid_at).toISOString()
+      : null;
+  }
+  return response;
 }
 
 export async function createBooking(body) {
@@ -242,5 +270,63 @@ export async function getBooking(reference, email) {
       "The requested booking was not found.",
     );
   }
-  return toBookingResponse(rows[0], rows);
+  return toBookingResponse(rows[0], rows, true);
+}
+
+export async function payBooking(reference, body) {
+  const { email } = validatePaymentBody(body);
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const booking = await lockBookingForPayment(client, reference, email);
+    if (!booking) {
+      throw new BookingsServiceError(
+        404,
+        "BOOKING_NOT_FOUND",
+        "The requested booking was not found.",
+      );
+    }
+
+    if (booking.status === "paid") {
+      const rows = await findBookingResponseById(client, booking.id);
+      await client.query("COMMIT");
+      return toBookingResponse(rows[0], rows, true);
+    }
+
+    if (booking.status !== "held" || booking.hold_expired) {
+      throw new BookingsServiceError(
+        409,
+        "HOLD_EXPIRED",
+        "The booking hold has expired.",
+      );
+    }
+
+    if (await isScreeningSalesClosed(client, booking.screening_id)) {
+      throw new BookingsServiceError(
+        409,
+        "SALES_CLOSED",
+        "Sales for this screening have closed.",
+      );
+    }
+
+    await client.query(
+      "UPDATE bookings SET status = 'paid' WHERE id = $1",
+      [booking.id],
+    );
+    await client.query(
+      `INSERT INTO payments (booking_id, method, amount, paid_at)
+       VALUES ($1, 'online', $2, now())`,
+      [booking.id, booking.total_price],
+    );
+
+    const rows = await findBookingResponseById(client, booking.id);
+    await client.query("COMMIT");
+    return toBookingResponse(rows[0], rows, true);
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 }
