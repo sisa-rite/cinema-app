@@ -1,6 +1,8 @@
-import { createBrowserRouter, Outlet, RouterProvider } from "react-router-dom";
+import { createBrowserRouter, Navigate, Outlet, RouterProvider } from "react-router-dom";
 import AuthProvider from "./auth/AuthProvider.jsx";
+import RequireRole from "./auth/RequireRole.jsx";
 import Layout from "./components/Layout.jsx";
+import AdminLayout from "./components/AdminLayout.jsx";
 import HomePage from "./pages/HomePage.jsx";
 import MoviesPage from "./pages/MoviesPage.jsx";
 import MovieDetailPage from "./pages/MovieDetailPage.jsx";
@@ -8,7 +10,8 @@ import ScreeningPage from "./pages/ScreeningPage.jsx";
 import CheckoutPage from "./pages/CheckoutPage.jsx";
 import StaffLoginPage from "./pages/StaffLoginPage.jsx";
 import CashierPage from "./pages/CashierPage.jsx";
-import AdminPage from "./pages/AdminPage.jsx";
+import AdminMoviesPage from "./pages/AdminMoviesPage.jsx";
+import AdminScreeningsPage from "./pages/AdminScreeningsPage.jsx";
 import NotFoundPage from "./pages/NotFoundPage.jsx";
 
 const router = createBrowserRouter([
@@ -28,8 +31,28 @@ const router = createBrowserRouter([
           { path: "/screenings/:id", element: <ScreeningPage /> },
           { path: "/checkout/:reference", element: <CheckoutPage /> },
           { path: "/staff/login", element: <StaffLoginPage /> },
-          { path: "/cashier", element: <CashierPage /> },
-          { path: "/admin", element: <AdminPage /> },
+          {
+            path: "/cashier",
+            element: (
+              <RequireRole roles={["cashier", "admin"]}>
+                <CashierPage />
+              </RequireRole>
+            ),
+          },
+          { path: "*", element: <NotFoundPage /> },
+        ],
+      },
+      {
+        path: "/admin",
+        element: (
+          <RequireRole roles={["admin"]}>
+            <AdminLayout />
+          </RequireRole>
+        ),
+        children: [
+          { index: true, element: <Navigate to="screenings" replace /> },
+          { path: "movies", element: <AdminMoviesPage /> },
+          { path: "screenings", element: <AdminScreeningsPage /> },
           { path: "*", element: <NotFoundPage /> },
         ],
       },
