@@ -1,6 +1,12 @@
 import { Router } from "express";
 import { requireRole } from "../../middleware/auth.js";
 import {
+  createMovie,
+  getMovie,
+  listMovies,
+  updateMovie,
+} from "./adminMovies.service.js";
+import {
   createScreening,
   deleteScreening,
   getScreening,
@@ -12,6 +18,26 @@ import {
 const router = Router();
 
 router.use(requireRole("admin"));
+
+router.get("/movies", async (_req, res) => {
+  const movies = await listMovies();
+  res.status(200).json(movies);
+});
+
+router.get("/movies/:id", async (req, res) => {
+  const movie = await getMovie(req.params.id);
+  res.status(200).json(movie);
+});
+
+router.post("/movies", async (req, res) => {
+  const movie = await createMovie(req.body);
+  res.status(201).json(movie);
+});
+
+router.patch("/movies/:id", async (req, res) => {
+  const movie = await updateMovie(req.params.id, req.body);
+  res.status(200).json(movie);
+});
 
 router.get("/halls", async (_req, res) => {
   const halls = await listHalls();
