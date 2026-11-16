@@ -37,6 +37,7 @@ Change it only by a pull request that both sides review.
 | 409 | `MOVIE_NOT_PUBLISHED` | Publishing a screening of an unpublished movie |
 | 409 | `SCREENING_OVERLAP` | The hall is already used at that time; `details.screeningIds` lists the conflicting screenings |
 | 409 | `SCREENING_HAS_BOOKINGS` | Changing or deleting a screening that already has tickets |
+| 409 | `MOVIE_HAS_BOOKINGS` | Hiding a movie that has upcoming screenings with tickets |
 | 500 | `INTERNAL_ERROR` | Unexpected error; details only in the server log |
 
 ---
@@ -78,7 +79,7 @@ Response `200`:
 ```
 
 Rules:
-- Only published screenings → otherwise `404 SCREENING_NOT_FOUND`. A screening that has started is still returned (the frontend shows "sales closed").
+- Only published screenings → otherwise `404 SCREENING_NOT_FOUND`. A screening that has started is still returned (the frontend shows "sales closed"). A screening of an unpublished movie counts as not published → `404 SCREENING_NOT_FOUND`.
 - `seats` contains every seat of the hall, sorted by `posY`, then `posX`.
 - `posX` = column from the left of the map (1…seatsPerRow), `posY` = physical row from the screen (1 = nearest). The map is drawn with the screen at the bottom.
 - `state`:
@@ -127,7 +128,7 @@ Response `201`:
 ```
 
 Rules:
-- Screening not found or not published → `404 SCREENING_NOT_FOUND`.
+- Screening not found or not published → `404 SCREENING_NOT_FOUND`. A screening of an unpublished movie counts as not published → `404 SCREENING_NOT_FOUND`.
 - `starts_at <= now()` → `409 SALES_CLOSED`.
 - Any seat not in the screening's hall, of type `owner` / `blocked`, or already held/sold → `409 SEATS_UNAVAILABLE` with `details.seatIds`. Nothing is saved.
 - Everything runs in ONE transaction: mark expired holds of this screening as `expired` and delete their tickets, insert the booking, insert one ticket per seat.
@@ -276,6 +277,7 @@ The admin sees every movie, also unpublished ones:
 - `POST /api/admin/movies` → `201` movie object.
 - `PATCH /api/admin/movies/:id` → `200` movie object. Only the fields sent are changed.
 - No delete: screenings and tickets refer to movies. Hide a movie with `published: false`.
+- Hiding (`published: false`) a movie that has upcoming screenings with tickets → `409 MOVIE_HAS_BOOKINGS`. Changing other fields is allowed.
 
 Request fields (`400 VALIDATION_ERROR` with `details.fields` when invalid):
 
