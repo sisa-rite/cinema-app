@@ -2,9 +2,10 @@ import pool from "../../db.js";
 
 export async function findPublishedScreening(id) {
   const { rows } = await pool.query(
-    `SELECT id, hall_id, base_price, starts_at <= NOW() AS sales_closed
-     FROM screenings
-     WHERE id = $1 AND published = true`,
+    `SELECT s.id, s.hall_id, s.base_price, s.starts_at <= NOW() AS sales_closed
+     FROM screenings AS s
+     JOIN movies AS m ON m.id = s.movie_id
+     WHERE s.id = $1 AND s.published = true AND m.published = true`,
     [id],
   );
   return rows[0] ?? null;

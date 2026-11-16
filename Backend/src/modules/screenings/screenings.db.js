@@ -29,7 +29,7 @@ export async function findPublishedScreeningSeats(id) {
        ON ticket.screening_id = s.id AND ticket.seat_id = seat.id
      LEFT JOIN bookings AS b
        ON b.id = ticket.booking_id AND b.screening_id = s.id
-     WHERE s.id = $1 AND s.published = true
+     WHERE s.id = $1 AND s.published = true AND m.published = true
      ORDER BY seat.pos_y, seat.pos_x`,
     [id],
   );
