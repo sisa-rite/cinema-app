@@ -39,6 +39,16 @@ const monthYearFormatter = new Intl.DateTimeFormat("en-GB", {
   year: "numeric",
 });
 
+const dateTimeFormatter = new Intl.DateTimeFormat("en-GB", {
+  timeZone: TIME_ZONE,
+  day: "numeric",
+  month: "short",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
+
 const priceFormatter = new Intl.NumberFormat("fi-FI", {
   style: "currency",
   currency: "EUR",
@@ -54,6 +64,10 @@ export function formatDuration(minutes) {
 
 export function formatTime(iso) {
   return timeFormatter.format(new Date(iso));
+}
+
+export function formatDateTime(iso) {
+  return dateTimeFormatter.format(new Date(iso));
 }
 
 export function getDayKey(iso) {

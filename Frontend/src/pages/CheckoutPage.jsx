@@ -1,16 +1,19 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { getBooking } from "../api/bookings.js";
+import { getBooking, payBooking } from "../api/bookings.js";
 import { ApiError } from "../api/client.js";
 import { getScreeningSeats } from "../api/screenings.js";
 import Poster from "../components/Poster.jsx";
 import StateMessage from "../components/StateMessage.jsx";
 import { loadBookingEmail, saveBookingEmail } from "../utils/bookingStorage.js";
-import { formatDayLabel, formatPrice, formatTime } from "../utils/format.js";
+import { formatDateTime, formatDayLabel, formatPrice, formatTime } from "../utils/format.js";
 
 const PAGE_TITLE = "Checkout — Rio Theatres";
+const CONFIRMED_TITLE = "Booking confirmed — Rio Theatres";
 const DEFAULT_TITLE = "Rio Theatres";
 const WARNING_SECONDS = 2 * 60;
+// Pay errors that replace the whole checkout with another view.
+const PAGE_LEVEL_PAY_ERRORS = ["HOLD_EXPIRED", "SALES_CLOSED", "BOOKING_NOT_FOUND"];
 const CONTAINER_CLASSES = "mx-auto max-w-5xl px-4 py-8 sm:px-6";
 const TEXT_LINK_CLASSES =
   "rounded-sm font-semibold text-rio-gold underline-offset-4 hover:underline";
@@ -96,25 +99,165 @@ function CopyReference({ reference }) {
   );
 }
 
-function HeldBooking({ booking, screening }) {
+function sortSeats(seats) {
+  return [...seats].sort((a, b) => a.rowNumber - b.rowNumber || a.seatNumber - b.seatNumber);
+}
+
+function SeatChips({ seats }) {
+  return (
+    <ul aria-label="Your seats" className="flex flex-wrap gap-2">
+      {sortSeats(seats).map((seat) => (
+        <li
+          key={seat.id}
+          className="rounded-full border border-rio-gold/50 px-3 py-1 text-xs font-semibold text-rio-gold-light"
+        >
+          Row {seat.rowNumber} · Seat {seat.seatNumber}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function ScreeningDetails({ screening, seats }) {
+  const { movie, theatre, hall } = screening;
+
+  return (
+    <section aria-labelledby="checkout-movie-title" className="flex gap-4 sm:gap-6">
+      <Poster src={movie.posterUrl} title={movie.title} className="w-24 shrink-0 sm:w-36" />
+      <div className="min-w-0 space-y-3">
+        <h2
+          id="checkout-movie-title"
+          className="font-display text-xl font-bold text-rio-gold sm:text-2xl"
+        >
+          {movie.title}
+        </h2>
+        <p className="text-rio-gold-light">
+          <time dateTime={screening.startsAt}>
+            {formatDayLabel(screening.startsAt)} · {formatTime(screening.startsAt)}
+          </time>
+        </p>
+        <p className="text-sm text-white/75">
+          {theatre.name} · {hall.name}
+        </p>
+        <SeatChips seats={seats} />
+      </div>
+    </section>
+  );
+}
+
+function BookingConfirmation({ booking, screening, moviesPath }) {
+  return (
+    <section
+      data-testid="booking-confirmation"
+      aria-labelledby="confirmation-title"
+      className={CONTAINER_CLASSES}
+    >
+      <div className="flex items-center gap-3">
+        <svg
+          aria-hidden="true"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="size-10 shrink-0 text-rio-gold"
+        >
+          <circle cx="12" cy="12" r="10" />
+          <path d="M7.5 12.5l3 3 6-6" />
+        </svg>
+        <h1
+          id="confirmation-title"
+          className="font-display text-3xl font-bold text-rio-gold sm:text-4xl"
+        >
+          Your tickets are confirmed
+        </h1>
+      </div>
+
+      <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start">
+        {screening ? (
+          <ScreeningDetails screening={screening} seats={booking.seats} />
+        ) : (
+          <div className="space-y-3">
+            <p className="text-white/75">Screening details are not available.</p>
+            <SeatChips seats={booking.seats} />
+          </div>
+        )}
+
+        <aside
+          aria-labelledby="confirmation-summary-title"
+          className="space-y-4 rounded-2xl border border-rio-gold/30 bg-rio-surface p-6"
+        >
+          <h2 id="confirmation-summary-title" className="text-sm font-semibold text-white/70">
+            Booking reference
+          </h2>
+          <CopyReference reference={booking.reference} />
+          <p className="text-sm text-rio-gold-light">Show this reference at the cinema.</p>
+          <p className="flex items-baseline justify-between gap-4 border-t border-rio-gold/20 pt-4">
+            <span className="text-white/75">Total</span>
+            <span className="text-xl font-semibold text-rio-gold-light">
+              {formatPrice(booking.totalPrice)}
+            </span>
+          </p>
+          <p className="text-sm text-white/75">
+            Paid on <time dateTime={booking.paidAt}>{formatDateTime(booking.paidAt)}</time>
+          </p>
+        </aside>
+      </div>
+
+      <p className="mt-8 text-sm text-white/60">
+        This confirmation is shown on screen only — please save your reference.
+      </p>
+      <Link to={moviesPath} className={`mt-6 inline-block ${GOLD_BUTTON_CLASSES}`}>
+        Back to movies
+      </Link>
+    </section>
+  );
+}
+
+function HeldBooking({ booking, screening, email, onPaid, onPayError }) {
   const [now, setNow] = useState(Date.now);
   const [startNow] = useState(now);
+  const [accepted, setAccepted] = useState(false);
+  const [paying, setPaying] = useState(false);
+  const [acceptError, setAcceptError] = useState("");
+  const [payFailed, setPayFailed] = useState(false);
+  const payingRef = useRef(false);
   const expiresAt = Date.parse(booking.holdExpiresAt);
   const remainingSeconds = Math.max(0, Math.ceil((expiresAt - now) / 1000));
   const startSeconds =
     booking.status === "held" ? Math.max(0, Math.ceil((expiresAt - startNow) / 1000)) : 0;
   const expired = booking.status === "expired" || remainingSeconds === 0;
   const warning = remainingSeconds <= WARNING_SECONDS;
-  const { movie, theatre, hall } = screening;
-  const seats = [...booking.seats].sort(
-    (a, b) => a.rowNumber - b.rowNumber || a.seatNumber - b.seatNumber,
-  );
 
   useEffect(() => {
     if (expired) return undefined;
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [expired]);
+
+  async function pay() {
+    if (payingRef.current) return;
+    payingRef.current = true;
+    setPaying(true);
+    setAcceptError("");
+    setPayFailed(false);
+
+    try {
+      onPaid(await payBooking(booking.reference, { email, acceptNoRefund: true }));
+    } catch (error) {
+      payingRef.current = false;
+      setPaying(false);
+      const fields = error.code === "VALIDATION_ERROR" ? error.details?.fields : null;
+      if (error instanceof ApiError && PAGE_LEVEL_PAY_ERRORS.includes(error.code)) {
+        onPayError(error);
+      } else if (fields) {
+        setAcceptError(fields.acceptNoRefund ?? fields.email ?? error.message);
+      } else {
+        setPayFailed(true);
+      }
+    }
+  }
 
   return (
     <>
@@ -147,35 +290,7 @@ function HeldBooking({ booking, screening }) {
           </p>
 
           <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start">
-            <section aria-labelledby="checkout-movie-title" className="flex gap-4 sm:gap-6">
-              <Poster src={movie.posterUrl} title={movie.title} className="w-24 shrink-0 sm:w-36" />
-              <div className="min-w-0 space-y-3">
-                <h2
-                  id="checkout-movie-title"
-                  className="font-display text-xl font-bold text-rio-gold sm:text-2xl"
-                >
-                  {movie.title}
-                </h2>
-                <p className="text-rio-gold-light">
-                  <time dateTime={screening.startsAt}>
-                    {formatDayLabel(screening.startsAt)} · {formatTime(screening.startsAt)}
-                  </time>
-                </p>
-                <p className="text-sm text-white/75">
-                  {theatre.name} · {hall.name}
-                </p>
-                <ul aria-label="Your seats" className="flex flex-wrap gap-2">
-                  {seats.map((seat) => (
-                    <li
-                      key={seat.id}
-                      className="rounded-full border border-rio-gold/50 px-3 py-1 text-xs font-semibold text-rio-gold-light"
-                    >
-                      Row {seat.rowNumber} · Seat {seat.seatNumber}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </section>
+            <ScreeningDetails screening={screening} seats={booking.seats} />
 
             <aside
               aria-labelledby="checkout-summary-title"
@@ -191,11 +306,43 @@ function HeldBooking({ booking, screening }) {
                   {formatPrice(booking.totalPrice)}
                 </span>
               </p>
-              <button type="button" disabled className={`w-full ${GOLD_BUTTON_CLASSES}`}>
-                Pay
+              <p className="rounded-lg border border-rio-gold/40 bg-rio-gold/10 px-3 py-2 text-sm font-semibold text-rio-gold-light">
+                Paid tickets cannot be refunded or cancelled.
+              </p>
+              <div className="space-y-1">
+                <label className="flex items-start gap-2 text-sm text-white/75">
+                  <input
+                    type="checkbox"
+                    required
+                    checked={accepted}
+                    onChange={(event) => setAccepted(event.target.checked)}
+                    aria-invalid={acceptError ? true : undefined}
+                    aria-describedby={acceptError ? "no-refund-error" : undefined}
+                    className="mt-0.5 accent-rio-gold"
+                  />
+                  I understand that paid tickets cannot be refunded.
+                </label>
+                {acceptError && (
+                  <p id="no-refund-error" className="text-sm text-red-300">
+                    {acceptError}
+                  </p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={pay}
+                disabled={!accepted || paying}
+                className={`w-full ${GOLD_BUTTON_CLASSES}`}
+              >
+                {paying ? "Paying…" : "Pay"}
               </button>
+              {payFailed && (
+                <p role="alert" className="text-sm text-red-300">
+                  Payment failed. Please try again.
+                </p>
+              )}
               <p className="text-center text-xs text-white/60">
-                Payment is coming in the next sprint.
+                This is a simulated payment — no card details are needed.
               </p>
             </aside>
           </div>
@@ -215,11 +362,30 @@ function Checkout({ reference }) {
   const [result, setResult] = useState({ key: null, data: null, error: null });
   const requestKey = `${lookup.email}#${attempt}`;
   const isLoading = lookup.email !== null && result.key !== requestKey;
-  const apiCity = isLoading ? undefined : result.data?.screening.theatre.city;
+  const apiCity = isLoading ? undefined : result.data?.screening?.theatre.city;
   const urlCity = searchParams.get("city");
+  const city = apiCity ?? urlCity;
+  const moviesPath = city ? `/movies?city=${encodeURIComponent(city)}` : "/";
+
+  function updateBooking(booking) {
+    setResult((current) => ({ ...current, data: { ...current.data, booking } }));
+  }
+
+  function handlePayError(error) {
+    if (error.code === "HOLD_EXPIRED") {
+      updateBooking({ ...result.data.booking, status: "expired" });
+    } else {
+      setResult((current) => ({ ...current, error }));
+    }
+  }
+
+  const isPaid = !isLoading && result.data?.booking.status === "paid";
 
   useEffect(() => {
-    document.title = PAGE_TITLE;
+    document.title = isPaid ? CONFIRMED_TITLE : PAGE_TITLE;
+  }, [isPaid]);
+
+  useEffect(() => {
     return () => {
       document.title = DEFAULT_TITLE;
     };
@@ -232,7 +398,14 @@ function Checkout({ reference }) {
 
     getBooking(reference, lookup.email, { signal })
       .then(async (booking) => {
-        const { screening } = await getScreeningSeats(booking.screeningId, { signal });
+        // A paid booking is always confirmed, even if its screening was hidden later.
+        const screening = await getScreeningSeats(booking.screeningId, { signal }).then(
+          (data) => data.screening,
+          (error) => {
+            if (booking.status !== "paid" || signal.aborted) throw error;
+            return null;
+          },
+        );
         saveBookingEmail(reference, lookup.email);
         setResult({ key: requestKey, data: { booking, screening }, error: null });
       })
@@ -289,6 +462,19 @@ function Checkout({ reference }) {
       );
     }
 
+    if (result.error instanceof ApiError && result.error.code === "SALES_CLOSED") {
+      return (
+        <StateMessage title="Sales for this screening have closed." headingAs="h1">
+          <p className="text-white/75">
+            The screening has already started, so your seats could not be paid for.
+          </p>
+          <Link to={moviesPath} className={GOLD_BUTTON_CLASSES}>
+            Back to movies
+          </Link>
+        </StateMessage>
+      );
+    }
+
     return (
       <StateMessage title="We couldn’t load your booking" headingAs="h1" role="alert">
         <p className="text-white/75">
@@ -306,7 +492,25 @@ function Checkout({ reference }) {
     );
   }
 
-  return <HeldBooking booking={result.data.booking} screening={result.data.screening} />;
+  if (isPaid) {
+    return (
+      <BookingConfirmation
+        booking={result.data.booking}
+        screening={result.data.screening}
+        moviesPath={moviesPath}
+      />
+    );
+  }
+
+  return (
+    <HeldBooking
+      booking={result.data.booking}
+      screening={result.data.screening}
+      email={lookup.email}
+      onPaid={updateBooking}
+      onPayError={handlePayError}
+    />
+  );
 }
 
 function CheckoutPage() {

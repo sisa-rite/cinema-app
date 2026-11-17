@@ -8,3 +8,7 @@ export function getBooking(reference, email, { signal } = {}) {
   const params = new URLSearchParams({ email });
   return apiGet(`/api/bookings/${encodeURIComponent(reference)}?${params}`, { signal });
 }
+
+export function payBooking(reference, { email, acceptNoRefund }) {
+  return apiPost(`/api/bookings/${encodeURIComponent(reference)}/pay`, { email, acceptNoRefund });
+}
