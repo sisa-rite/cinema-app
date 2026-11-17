@@ -59,7 +59,7 @@ describe("Customer flow", () => {
     });
   });
 
-  it("holds two seats and shows the checkout", () => {
+  it("holds two seats, pays and shows the confirmation", () => {
     const email = `e2e-${Date.now()}@test.rio`;
     openFirstScreening();
 
@@ -92,6 +92,27 @@ describe("Customer flow", () => {
         cy.get('ul[aria-label="Your seats"] li').should("have.length", 2);
         picked.forEach(({ text }) => {
           cy.get('ul[aria-label="Your seats"]').contains("li", text);
+        });
+
+        cy.get('[data-testid="booking-reference"]').invoke("text").then((reference) => {
+          cy.contains("Paid tickets cannot be refunded or cancelled.");
+          cy.contains("button", "Pay").should("be.disabled");
+          cy.contains("label", "I understand that paid tickets cannot be refunded.").click();
+          cy.contains("button", "Pay").should("be.enabled").click();
+
+          cy.get('[data-testid="booking-confirmation"]')
+            .should("be.visible")
+            .within(() => {
+              cy.contains("h1", "Your tickets are confirmed");
+              cy.get('[data-testid="booking-reference"]').should("have.text", reference);
+              cy.contains("Paid on");
+            });
+          cy.title().should("eq", "Booking confirmed — Rio Theatres");
+
+          cy.reload();
+          cy.get('[data-testid="booking-confirmation"]')
+            .find('[data-testid="booking-reference"]')
+            .should("have.text", reference);
         });
       });
   });
