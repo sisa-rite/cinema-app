@@ -49,6 +49,17 @@ const dateTimeFormatter = new Intl.DateTimeFormat("en-GB", {
   hourCycle: "h23",
 });
 
+const shortDateFormatter = new Intl.DateTimeFormat("en-GB", {
+  timeZone: TIME_ZONE,
+  day: "numeric",
+  month: "short",
+});
+
+const offsetFormatter = new Intl.DateTimeFormat("en-GB", {
+  timeZone: TIME_ZONE,
+  timeZoneName: "longOffset",
+});
+
 const priceFormatter = new Intl.NumberFormat("fi-FI", {
   style: "currency",
   currency: "EUR",
@@ -79,10 +90,43 @@ export function getDayKey(iso) {
   return `${parts.year}-${parts.month}-${parts.day}`;
 }
 
-function addDays(dayKey, days) {
+export function addDays(dayKey, days) {
   const date = new Date(`${dayKey}T00:00:00Z`);
   date.setUTCDate(date.getUTCDate() + days);
   return date.toISOString().slice(0, 10);
+}
+
+export function todayKey(now = new Date()) {
+  return getDayKey(now);
+}
+
+// "GMT+02:00" → "+02:00"
+function helsinkiOffset(date) {
+  const zoneName = offsetFormatter
+    .formatToParts(date)
+    .find((part) => part.type === "timeZoneName").value;
+  return zoneName.slice(3);
+}
+
+function offsetToMinutes(offset) {
+  const [hours, minutes] = offset.slice(1).split(":").map(Number);
+  return (offset.startsWith("-") ? -1 : 1) * (hours * 60 + minutes);
+}
+
+// Helsinki wall-clock time → ISO with the Helsinki offset, whatever the browser's time zone.
+// A time skipped or repeated by a DST change gets the winter offset +02:00: a skipped 03:30
+// becomes 04:30 summer time, a repeated 03:30 means the second (winter time) one.
+export function helsinkiDateTimeToIso(dayKey, time) {
+  const [year, month, day] = dayKey.split("-").map(Number);
+  const [hour, minute] = time.split(":").map(Number);
+  const wallClockAsUtc = Date.UTC(year, month - 1, day, hour, minute);
+  const firstOffset = helsinkiOffset(new Date(wallClockAsUtc));
+  const offset = helsinkiOffset(new Date(wallClockAsUtc - offsetToMinutes(firstOffset) * 60_000));
+  return `${dayKey}T${time.slice(0, 5)}:00${offset}`;
+}
+
+export function isoToHelsinkiParts(iso) {
+  return { dayKey: getDayKey(iso), time: formatTime(iso) };
 }
 
 // Noon UTC falls on the same calendar day in Helsinki all year round.
@@ -109,6 +153,10 @@ export function formatWeekdayShort(dayKey) {
 
 export function formatFullDate(dayKey) {
   return fullDateFormatter.format(dayKeyToDate(dayKey));
+}
+
+export function formatShortDate(dayKey) {
+  return shortDateFormatter.format(dayKeyToDate(dayKey));
 }
 
 export function formatMonthYear(dayKey) {
