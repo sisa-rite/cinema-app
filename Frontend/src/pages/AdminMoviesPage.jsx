@@ -173,7 +173,8 @@ function AdminMoviesPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { search } = useLocation();
   const status = parseStatus(searchParams.get("status"));
-  const query = searchParams.get("q") ?? "";
+  // Local state keeps fast typing intact; the URL only mirrors it for reloads.
+  const [query, setQuery] = useState(() => searchParams.get("q") ?? "");
 
   const [attempt, setAttempt] = useState(0);
   const [result, setResult] = useState({ key: null, movies: [], failed: false });
@@ -324,7 +325,10 @@ function AdminMoviesPage() {
             id="movie-search"
             type="search"
             value={query}
-            onChange={(event) => updateParam("q", event.target.value, "")}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              updateParam("q", event.target.value, "");
+            }}
             className="w-full rounded-lg border border-rio-gold/40 bg-rio-black px-3 py-2 text-white focus:border-rio-gold"
           />
         </div>
