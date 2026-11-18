@@ -1,7 +1,8 @@
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { createMovie, updateMovie } from "../api/adminMovies.js";
 import { HAS_BOOKINGS_MESSAGE } from "../utils/adminMovies.js";
 import Poster from "./Poster.jsx";
+import Toast from "./Toast.jsx";
 
 const AGE_RATINGS = ["S", "K-7", "K-12", "K-16", "K-18"];
 // Order of the fields on the page: the first invalid one gets focus.
@@ -119,6 +120,7 @@ function MovieForm({ movie = null, initialStatus = "", onCreated, onSaved }) {
   const [status, setStatus] = useState(initialStatus);
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
+  const dismissStatus = useCallback(() => setStatus(""), []);
 
   const payload = toPayload(values);
   const changes = creating ? payload : changedFields(payload, movie);
@@ -152,7 +154,7 @@ function MovieForm({ movie = null, initialStatus = "", onCreated, onSaved }) {
       }
       const updated = await updateMovie(movie.id, changes);
       setValues(toValues(updated));
-      setStatus("Changes saved.");
+      setStatus("Changes saved");
       onSaved(updated);
     } catch (error) {
       const fields = error.code === "VALIDATION_ERROR" ? error.details?.fields : null;
@@ -175,6 +177,7 @@ function MovieForm({ movie = null, initialStatus = "", onCreated, onSaved }) {
 
   return (
     <div className="grid gap-8 lg:grid-cols-[minmax(0,48rem)_14rem] lg:items-start">
+      <Toast message={status} onDismiss={dismissStatus} />
       <form onSubmit={handleSubmit} noValidate className="space-y-5">
         {alert && (
           <p
@@ -184,13 +187,6 @@ function MovieForm({ movie = null, initialStatus = "", onCreated, onSaved }) {
             {alert}
           </p>
         )}
-        <div role="status">
-          {status && (
-            <p className="rounded-lg border border-rio-gold bg-rio-gold/10 px-4 py-3 text-sm font-semibold text-rio-gold-light">
-              {status}
-            </p>
-          )}
-        </div>
 
         <div className="space-y-1">
           <label htmlFor={fieldId("title")} className={LABEL_CLASSES}>

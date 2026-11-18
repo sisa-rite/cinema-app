@@ -31,7 +31,7 @@ describe("Admin movies", () => {
 
     cy.wait("@createMovie").its("response.statusCode").should("eq", 201);
     cy.location("pathname").should("match", /^\/admin\/movies\/\d+$/);
-    cy.get('[role="status"]').should("contain", "Movie created.");
+    cy.get('[role="status"]').should("have.text", "Movie created");
     cy.contains("h1", title);
     cy.title().should("eq", `${title} — Admin — Rio Theatres`);
 
@@ -52,7 +52,7 @@ describe("Admin movies", () => {
     cy.get("#movie-genre").clear().type("E2E genre");
     cy.contains("button", "Save changes").click();
 
-    cy.get('[role="status"]').should("contain", "Changes saved.");
+    cy.get('[role="status"]').should("have.text", "Changes saved");
     cy.contains("button", "Save changes").should("be.disabled");
 
     cy.reload();

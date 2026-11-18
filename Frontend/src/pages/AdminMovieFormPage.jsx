@@ -46,13 +46,13 @@ function NewMovie({ listSearch, backLink }) {
 function EditMovie({ id, listSearch, backLink }) {
   const location = useLocation();
   const navigate = useNavigate();
-  const [initialStatus] = useState(() => (location.state?.created ? "Movie created." : ""));
+  const [initialStatus] = useState(() => (location.state?.created ? "Movie created" : ""));
   const [attempt, setAttempt] = useState(0);
   const [result, setResult] = useState({ key: null, movie: null, error: null });
   const isLoading = result.key !== attempt;
   useDocumentTitle(isLoading ? null : result.movie?.title);
 
-  // Show "Movie created." once, not again after a reload.
+  // Show "Movie created" once, not again after a reload.
   useEffect(() => {
     if (location.state?.created) {
       navigate(location.pathname, { replace: true, state: { listSearch } });
