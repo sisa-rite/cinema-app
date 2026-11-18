@@ -165,7 +165,7 @@ function MovieForm({ movie = null, initialStatus = "", onCreated, onSaved }) {
         focusFirstInvalid(fields);
       } else if (error.code === "MOVIE_HAS_BOOKINGS") {
         setAlert(
-          `${HAS_BOOKINGS_MESSAGE} None of the other changes in this save were stored either — keep it published and save again.`,
+          `${HAS_BOOKINGS_MESSAGE} Nothing was saved — keep it published and save again.`,
         );
       } else {
         setAlert("The movie could not be saved. Please try again in a moment.");
