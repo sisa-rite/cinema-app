@@ -6,6 +6,18 @@ const SHOWTIME_LINKS = 'a[href^="/screenings/"]';
 const SEATS = '[data-testid="seat-map"] button[aria-label^="Row "]';
 const REFERENCE_PATTERN = /^RIO-[A-HJ-NP-Z2-9]{6}$/;
 
+// The age warning (FR-010) has its own spec; here every movie is unrated so the flow
+// does not depend on the seeded ratings.
+function withoutAgeRating() {
+  cy.intercept("GET", "**/api/screenings/*/seats", (req) => {
+    // Without this the browser may revalidate and get an empty 304 instead of the seats.
+    delete req.headers["if-none-match"];
+    req.on("before:response", (res) => {
+      res.body.screening.movie.ageRating = null;
+    });
+  });
+}
+
 function openFirstScreening() {
   cy.visit("/movies?city=oulu");
   cy.get(MOVIE_LINKS).first().click();
@@ -61,6 +73,7 @@ describe("Customer flow", () => {
 
   it("holds two seats, pays and shows the confirmation", () => {
     const email = `e2e-${Date.now()}@test.rio`;
+    withoutAgeRating();
     openFirstScreening();
 
     cy.get(`${SEATS}[aria-label$=", available"]`)

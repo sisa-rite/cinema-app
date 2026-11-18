@@ -1,15 +1,42 @@
 import { useState } from "react";
+import { requiresAgeCheck } from "../utils/ageRating.js";
 import { formatPrice } from "../utils/format.js";
+import AgeRatingDialog from "./AgeRatingDialog.jsx";
 
 const GOLD_BUTTON_CLASSES =
   "rounded-full bg-rio-gold px-6 py-2.5 font-semibold text-rio-black transition-colors hover:bg-rio-gold-light disabled:cursor-not-allowed disabled:opacity-50";
 const TEXT_BUTTON_CLASSES =
   "rounded-sm text-sm font-semibold text-rio-gold underline-offset-4 hover:underline";
 
-function SelectionSummary({ seats, basePrice, onHold, submitting = false, fieldErrors = {}, alert = null }) {
+function SelectionSummary({
+  screeningId,
+  movieTitle,
+  ageRating = null,
+  seats,
+  basePrice,
+  onHold,
+  submitting = false,
+  fieldErrors = {},
+  alert = null,
+}) {
   const [step, setStep] = useState("seats");
   const [email, setEmail] = useState("");
+  const [ageDialogOpen, setAgeDialogOpen] = useState(false);
+  // Storing the screening id (not a boolean) makes the confirmation reset for another screening.
+  const [ageConfirmedFor, setAgeConfirmedFor] = useState(null);
   const showEmailStep = step === "email" && seats.length > 0;
+  const needsAgeCheck = requiresAgeCheck(ageRating) && ageConfirmedFor !== screeningId;
+
+  function handleContinue() {
+    if (needsAgeCheck) setAgeDialogOpen(true);
+    else setStep("email");
+  }
+
+  function confirmAgeRating() {
+    setAgeDialogOpen(false);
+    setAgeConfirmedFor(screeningId);
+    setStep("email");
+  }
 
   function handleSubmit(event) {
     event.preventDefault();
@@ -70,6 +97,8 @@ function SelectionSummary({ seats, basePrice, onHold, submitting = false, fieldE
               id="booking-email"
               type="email"
               autoComplete="email"
+              // The "Continue" button that had focus is gone once this step shows.
+              autoFocus
               required
               value={email}
               onChange={(event) => setEmail(event.target.value)}
@@ -104,12 +133,22 @@ function SelectionSummary({ seats, basePrice, onHold, submitting = false, fieldE
       ) : (
         <button
           type="button"
-          onClick={() => setStep("email")}
+          onClick={handleContinue}
           disabled={seats.length === 0}
           className={`w-full ${GOLD_BUTTON_CLASSES}`}
         >
           Continue
         </button>
+      )}
+
+      {requiresAgeCheck(ageRating) && (
+        <AgeRatingDialog
+          open={ageDialogOpen}
+          rating={ageRating}
+          movieTitle={movieTitle}
+          onConfirm={confirmAgeRating}
+          onCancel={() => setAgeDialogOpen(false)}
+        />
       )}
     </aside>
   );
