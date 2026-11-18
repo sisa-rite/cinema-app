@@ -71,6 +71,10 @@ describe("Age rating warning", () => {
       expectBackOnSeats(selectedLabel);
 
       cy.contains("button", "Continue").click();
+      cy.get(`${DIALOG} button[aria-label="Close"]`).click();
+      expectBackOnSeats(selectedLabel);
+
+      cy.contains("button", "Continue").click();
       cy.contains("button", "I understand, continue").click();
       cy.get(DIALOG).should("not.be.visible");
       cy.get(EMAIL_INPUT).should("be.visible");

@@ -46,17 +46,35 @@ function AgeRatingDialog({ open, rating, movieTitle, onConfirm, onCancel }) {
       onClick={handleBackdropClick}
       className="m-auto w-[calc(100%-2rem)] max-w-md rounded-2xl border border-rio-gold/40 bg-rio-surface p-0 text-white shadow-rio-glow backdrop:bg-rio-black/80"
     >
-      <div className="space-y-4 p-6">
+      <div className="relative space-y-4 p-6">
+        <button
+          type="button"
+          onClick={() => dialogRef.current.close()}
+          aria-label="Close"
+          className="absolute top-3 right-3 grid size-9 place-items-center rounded-full text-rio-gold-light/80 transition-colors hover:bg-rio-gold/10 hover:text-rio-gold"
+        >
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            className="size-5"
+          >
+            <path d="M6 6l12 12M18 6L6 18" />
+          </svg>
+        </button>
         <h2
           id={titleId}
-          className="flex flex-wrap items-center gap-3 font-display text-xl font-bold text-rio-gold"
+          className="flex flex-wrap items-center gap-3 pr-10 font-display text-xl font-bold text-rio-gold"
         >
           Age rating {rating}
           <AgeRatingBadge rating={rating} />
         </h2>
         <div id={textId} className="space-y-2 text-white/85">
           <p>
-            “{movieTitle}” is rated {rating}. It is not recommended for children under{" "}
+            “{movieTitle}” is rated <span className="whitespace-nowrap">{rating}</span>. It is not recommended for children under{" "}
             {minimumAge(rating)}.
           </p>
           <p>
