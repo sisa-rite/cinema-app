@@ -13,10 +13,10 @@ function Toast({ message, onDismiss }) {
   return (
     <div
       role="status"
-      className="pointer-events-none fixed inset-x-0 top-1/3 z-50 flex justify-center px-4"
+      className="pointer-events-none fixed inset-x-4 bottom-4 z-50 flex sm:right-auto"
     >
       {message && (
-        <div className="pointer-events-auto flex items-center gap-3 rounded-full border border-rio-gold bg-rio-surface py-2 pr-2 pl-4 font-semibold text-rio-gold-light shadow-rio-glow">
+        <div className="pointer-events-auto flex w-full items-center gap-3 rounded-lg border border-rio-gold/40 bg-rio-surface py-3 pr-2 pl-4 text-sm text-white shadow-lg shadow-black/60 sm:w-auto">
           <svg
             aria-hidden="true"
             viewBox="0 0 24 24"
@@ -30,7 +30,7 @@ function Toast({ message, onDismiss }) {
             <circle cx="12" cy="12" r="10" />
             <path d="M7.5 12.5l3 3 6-6" />
           </svg>
-          <span>{message}</span>
+          <span className="flex-1">{message}</span>
           <button
             type="button"
             onClick={onDismiss}
