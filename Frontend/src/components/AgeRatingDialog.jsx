@@ -78,8 +78,8 @@ function AgeRatingDialog({ open, rating, movieTitle, onConfirm, onCancel }) {
             {minimumAge(rating)}.
           </p>
           <p>
-            Our staff will check your ID at the entrance. If you don’t meet the age
-            requirement, you won’t be let in.
+            Our staff may check your ID at the entrance. Paid tickets cannot be refunded if
+            you are not admitted.
           </p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row-reverse sm:justify-start sm:gap-3">
