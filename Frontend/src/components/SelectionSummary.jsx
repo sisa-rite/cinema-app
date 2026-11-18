@@ -97,6 +97,8 @@ function SelectionSummary({
               id="booking-email"
               type="email"
               autoComplete="email"
+              // The "Continue" button that had focus is gone once this step shows.
+              autoFocus
               required
               value={email}
               onChange={(event) => setEmail(event.target.value)}

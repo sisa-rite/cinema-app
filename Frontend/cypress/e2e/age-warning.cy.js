@@ -77,7 +77,7 @@ describe("Age rating warning", () => {
       cy.contains("button", "Continue").click();
       cy.contains("button", "I understand, continue").click();
       cy.get(DIALOG).should("not.be.visible");
-      cy.get(EMAIL_INPUT).should("be.visible");
+      cy.get(EMAIL_INPUT).should("be.visible").and("be.focused");
     });
   });
 
@@ -86,7 +86,7 @@ describe("Age rating warning", () => {
 
     selectFirstAvailableSeat();
     cy.contains("button", "Continue").click();
-    cy.get(EMAIL_INPUT).should("be.visible");
+    cy.get(EMAIL_INPUT).should("be.visible").and("be.focused");
     cy.get(DIALOG).should("not.exist");
   });
 });
