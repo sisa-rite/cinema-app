@@ -435,19 +435,26 @@ function AdminScreeningsPage() {
       </div>
 
       <div className="mt-6 flex flex-wrap items-end justify-between gap-4">
-        <div role="group" aria-label="Filter by theatre" className="flex flex-wrap gap-2">
+        {/* Native radios: one choice only, arrow keys move between the segments. */}
+        <fieldset className="flex divide-x divide-rio-gold/50 rounded-lg border border-rio-gold/50">
+          <legend className="sr-only">Theatre</legend>
           {[{ id: "", label: "All" }, ...theatres].map((theatre) => (
-            <button
+            <label
               key={theatre.id}
-              type="button"
-              aria-pressed={theatreId === String(theatre.id)}
-              onClick={() => updateParams({ theatreId: String(theatre.id) })}
-              className={`${PILL_CLASSES} aria-pressed:border-rio-gold aria-pressed:bg-rio-gold aria-pressed:text-rio-black`}
+              className="cursor-pointer px-5 py-2 text-sm font-semibold text-rio-gold-light transition-colors first:rounded-l-[7px] last:rounded-r-[7px] hover:bg-rio-gold/10 hover:text-rio-gold has-checked:bg-rio-gold has-checked:text-rio-black has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-rio-gold"
             >
+              <input
+                type="radio"
+                name="screenings-theatre"
+                value={theatre.id}
+                checked={theatreId === String(theatre.id)}
+                onChange={() => updateParams({ theatreId: String(theatre.id) })}
+                className="sr-only"
+              />
               {theatre.label}
-            </button>
+            </label>
           ))}
-        </div>
+        </fieldset>
 
         <div className="flex flex-wrap items-end gap-3">
           <div className="space-y-1">
