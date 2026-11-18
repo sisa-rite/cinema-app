@@ -231,19 +231,33 @@ function MovieForm({ movie = null, initialStatus = "", onCreated, onSaved }) {
             <label htmlFor={fieldId("ageRating")} className={LABEL_CLASSES}>
               Age rating
             </label>
-            <select
-              value={values.ageRating}
-              onChange={(event) => setField("ageRating", event.target.value)}
-              className={INPUT_CLASSES}
-              {...errorProps("ageRating", errors)}
-            >
-              <option value="">No rating</option>
-              {AGE_RATINGS.map((rating) => (
-                <option key={rating} value={rating}>
-                  {rating}
-                </option>
-              ))}
-            </select>
+            <div className="relative">
+              <select
+                value={values.ageRating}
+                onChange={(event) => setField("ageRating", event.target.value)}
+                className={`appearance-none pr-10 ${INPUT_CLASSES}`}
+                {...errorProps("ageRating", errors)}
+              >
+                <option value="">No rating</option>
+                {AGE_RATINGS.map((rating) => (
+                  <option key={rating} value={rating}>
+                    {rating}
+                  </option>
+                ))}
+              </select>
+              <svg
+                aria-hidden="true"
+                viewBox="0 0 20 20"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="pointer-events-none absolute top-1/2 right-4 size-4 -translate-y-1/2 text-rio-gold-light"
+              >
+                <path d="M5 7.5l5 5 5-5" />
+              </svg>
+            </div>
             <FieldError name="ageRating" errors={errors} />
           </div>
         </div>
