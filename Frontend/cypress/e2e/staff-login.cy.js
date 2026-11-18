@@ -1,21 +1,5 @@
 // Runs against the real backend with the seeded staff accounts.
-// Cypress 16 removed Cypress.env(); cy.env() reads secrets such as the seed password.
-
-function typePassword(password) {
-  cy.get("#staff-password").type(password, { log: false });
-}
-
-function logIn(email, password) {
-  cy.get("#staff-email").type(email);
-  if (password) {
-    typePassword(password);
-  } else {
-    cy.env(["SEED_PASSWORD"], { log: false }).then(({ SEED_PASSWORD }) =>
-      typePassword(SEED_PASSWORD ?? "Rio-demo-2026"),
-    );
-  }
-  cy.contains("button", "Log in").click();
-}
+import { logIn } from "../support/staffLogin.js";
 
 describe("Staff login", () => {
   it("sends a logged-out visitor to the login page and back after login", () => {

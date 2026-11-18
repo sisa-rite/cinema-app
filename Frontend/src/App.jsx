@@ -11,6 +11,7 @@ import CheckoutPage from "./pages/CheckoutPage.jsx";
 import StaffLoginPage from "./pages/StaffLoginPage.jsx";
 import CashierPage from "./pages/CashierPage.jsx";
 import AdminMoviesPage from "./pages/AdminMoviesPage.jsx";
+import AdminMovieFormPage from "./pages/AdminMovieFormPage.jsx";
 import AdminScreeningsPage from "./pages/AdminScreeningsPage.jsx";
 import NotFoundPage from "./pages/NotFoundPage.jsx";
 
@@ -52,6 +53,8 @@ const router = createBrowserRouter([
         children: [
           { index: true, element: <Navigate to="screenings" replace /> },
           { path: "movies", element: <AdminMoviesPage /> },
+          { path: "movies/new", element: <AdminMovieFormPage /> },
+          { path: "movies/:id", element: <AdminMovieFormPage /> },
           { path: "screenings", element: <AdminScreeningsPage /> },
           { path: "*", element: <NotFoundPage /> },
         ],
