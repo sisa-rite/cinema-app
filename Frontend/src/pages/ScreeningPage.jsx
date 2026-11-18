@@ -194,6 +194,9 @@ function SeatSelection({ initialData, initialLoadedAt }) {
         </section>
         {!salesClosed && (
           <SelectionSummary
+            screeningId={screening.id}
+            movieTitle={movie.title}
+            ageRating={movie.ageRating}
             seats={selectedSeats}
             basePrice={screening.basePrice}
             onHold={holdSeats}
