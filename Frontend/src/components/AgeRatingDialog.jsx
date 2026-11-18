@@ -59,7 +59,10 @@ function AgeRatingDialog({ open, rating, movieTitle, onConfirm, onCancel }) {
             “{movieTitle}” is rated {rating}. It is not recommended for children under{" "}
             {minimumAge(rating)}.
           </p>
-          <p>Our staff may ask for ID at the entrance.</p>
+          <p>
+            Our staff will check your ID at the entrance. If you don’t meet the age
+            requirement, you won’t be let in.
+          </p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row-reverse sm:justify-start sm:gap-3">
           <button
