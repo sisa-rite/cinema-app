@@ -6,7 +6,6 @@ const minuteIndex = Math.floor(Date.now() / 60_000);
 const day = addDays(todayKey(), 40 + (minuteIndex % 20));
 const listUrl = `/admin/screenings?from=${day}`;
 const lockedRowMessage = "Has tickets — cannot be changed";
-const euro = (amount) => new Intl.NumberFormat("fi-FI", { style: "currency", currency: "EUR" }).format(amount);
 
 function timeFor(offsetMinutes) {
   const minute = (minuteIndex + offsetMinutes) % 60;
@@ -79,9 +78,9 @@ describe("Admin changes reach customers", () => {
         screeningId = Number(screeningPath.split("/").pop());
 
         cy.visit(`/movies/${movieId}?city=oulu&date=${day}`);
-        cy.get(`a[href="/screenings/${screeningId}?city=oulu"]`).within(() => {
-          cy.contains("Premiere");
-          cy.contains(euro(11.5));
+        cy.get(`a[href="/screenings/${screeningId}?city=oulu"]`).should(($link) => {
+          expect($link.text(), "premiere showtime text").to.include("Premiere");
+          expect($link.text().replace(/\s/g, ""), "premiere showtime price").to.include("11,50€");
         });
 
         cy.visit(`/screenings/${screeningId}?city=oulu`);
@@ -91,7 +90,9 @@ describe("Admin changes reach customers", () => {
         cy.get('[data-testid="seat-map"] button[aria-label$=", available"]').eq(0).click();
         cy.get('[data-testid="seat-map"] button[aria-label$=", available"]').eq(0).click();
         cy.get('button[aria-label="Add child ticket"]').click();
-        cy.get('[data-testid="selection-total"]').should("have.text", euro(17.25));
+        cy.get('[data-testid="selection-total"]').invoke("text").should((text) => {
+          expect(text.replace(/\s/g, "")).to.eq("17,25€");
+        });
 
         cy.get('[data-testid="seat-map"] button[aria-label$=", selected"]').then(($selected) => {
           [...$selected].forEach((seat) => cy.wrap(seat).click());
@@ -144,7 +145,9 @@ describe("Admin changes reach customers", () => {
       fillScreening({ movieId, time, price: "10", published: true });
       cy.intercept("POST", "**/api/admin/screenings").as("createHiddenMovieScreening");
       cy.contains("button", "Create screening").click();
-      cy.wait("@createHiddenMovieScreening").its("response.statusCode").should("eq", 201);
+      cy.wait("@createHiddenMovieScreening").then(({ response }) => {
+        expect(response.statusCode, JSON.stringify(response.body)).to.eq(201);
+      });
       cy.location("pathname").then((screeningPath) => {
         screeningId = Number(screeningPath.split("/").pop());
         cy.visit(`/movies?city=oulu`);
