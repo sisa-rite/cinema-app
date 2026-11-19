@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { ticketPrices } from "../bookings/pricing.js";
 import { getMovie, getMovies } from "./movies.service.js";
 
 const router = Router();
@@ -36,6 +37,7 @@ router.get("/:id", async (req, res) => {
       hallName: screening.hall_name,
       basePrice: Number(screening.base_price),
       isPremiere: screening.is_premiere,
+      prices: ticketPrices(screening.base_price, screening.is_premiere),
     })),
   });
 });
