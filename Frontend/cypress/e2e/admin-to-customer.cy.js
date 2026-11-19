@@ -71,7 +71,9 @@ describe("Admin changes reach customers", () => {
       fillScreening({ movieId, time, price: "10", published: true, premiere: true });
       cy.intercept("POST", "**/api/admin/screenings").as("createPremiere");
       cy.contains("button", "Create screening").click();
-      cy.wait("@createPremiere").its("response.statusCode").should("eq", 201);
+      cy.wait("@createPremiere").then(({ response }) => {
+        expect(response.statusCode, JSON.stringify(response.body)).to.eq(201);
+      });
       cy.location("pathname").then((screeningPath) => {
         screeningId = Number(screeningPath.split("/").pop());
 
