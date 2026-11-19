@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import request from "supertest";
 import app from "../src/app.js";
 import pool from "../src/db.js";
+import { ticketPrices } from "../src/modules/bookings/pricing.js";
 
 const hasDatabase = Boolean(process.env.DATABASE_URL);
 const createdReferences = [];
@@ -34,7 +35,8 @@ after(async () => {
 
 async function findScreening() {
   const { rows } = await pool.query(
-    `SELECT screening.id, screening.hall_id, screening.base_price
+    `SELECT screening.id, screening.hall_id, screening.base_price,
+            screening.is_premiere
      FROM screenings AS screening
      WHERE screening.published = true
        AND screening.starts_at > NOW()
@@ -141,15 +143,19 @@ test(
       "seats",
       "status",
       "totalPrice",
+      "wheelchairSpaces",
     ]);
     assert.match(response.body.reference, /^RIO-[A-HJ-NP-Z2-9]{6}$/);
     assert.equal(response.body.status, "held");
     assert.equal(response.body.screeningId, screening.id);
     assert.equal(response.body.email, "guest@example.com");
-    assert.equal(
-      response.body.totalPrice,
-      Number(screening.base_price) * 2,
-    );
+    const prices = ticketPrices(screening.base_price, screening.is_premiere);
+    assert.equal(response.body.totalPrice, prices.adult * 2);
+    assert.equal(response.body.wheelchairSpaces, 0);
+    for (const seat of response.body.seats) {
+      assert.equal(seat.ticketType, "adult");
+      assert.equal(seat.price, prices.adult);
+    }
     const holdTimeRemaining =
       Date.parse(response.body.holdExpiresAt) - Date.now();
     assert.ok(holdTimeRemaining >= 14.5 * 60_000);
