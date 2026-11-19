@@ -46,6 +46,7 @@ Change it only by a pull request that both sides review.
 
 - `GET /api/movies?city=oulu|tampere` — movies with upcoming published screenings in the city.
 - `GET /api/movies/:id?city=oulu|tampere` — one movie with its upcoming screenings in the city.
+  Each screening has `basePrice`, `isPremiere` and `prices` (`{ "adult": 14.38, "child": 7.19 }` for a 12.50 € premiere) — the ticket prices after the pricing rules (see "Pricing — FR-021"). Show `prices.adult`, not `basePrice`, to customers; `basePrice` stays for compatibility.
 
 Full response examples: README → API.
 
