@@ -6,6 +6,7 @@ const minuteIndex = Math.floor(Date.now() / 60_000);
 const day = addDays(todayKey(), 40 + (minuteIndex % 20));
 const listUrl = `/admin/screenings?from=${day}`;
 const lockedRowMessage = "Has tickets — cannot be changed";
+const euro = (amount) => new Intl.NumberFormat("fi-FI", { style: "currency", currency: "EUR" }).format(amount);
 
 function timeFor(offsetMinutes) {
   const minute = (minuteIndex + offsetMinutes) % 60;
@@ -80,7 +81,7 @@ describe("Admin changes reach customers", () => {
         cy.visit(`/movies/${movieId}?city=oulu&date=${day}`);
         cy.get(`a[href="/screenings/${screeningId}?city=oulu"]`).within(() => {
           cy.contains("Premiere");
-          cy.contains("11,50 €");
+          cy.contains(euro(11.5));
         });
 
         cy.visit(`/screenings/${screeningId}?city=oulu`);
@@ -90,7 +91,7 @@ describe("Admin changes reach customers", () => {
         cy.get('[data-testid="seat-map"] button[aria-label$=", available"]').eq(0).click();
         cy.get('[data-testid="seat-map"] button[aria-label$=", available"]').eq(0).click();
         cy.get('button[aria-label="Add child ticket"]').click();
-        cy.get('[data-testid="selection-total"]').should("have.text", "17,25 €");
+        cy.get('[data-testid="selection-total"]').should("have.text", euro(17.25));
 
         cy.get('[data-testid="seat-map"] button[aria-label$=", selected"]').then(($selected) => {
           [...$selected].forEach((seat) => cy.wrap(seat).click());
