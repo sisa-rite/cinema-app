@@ -1,4 +1,4 @@
-const API_URL = Cypress.env("API_URL") ?? "http://127.0.0.1:3000";
+const API_URL = "http://127.0.0.1:3000";
 
 function loginToken(email) {
   return cy.env(["SEED_PASSWORD"], { log: false }).then(({ SEED_PASSWORD }) =>
@@ -82,7 +82,9 @@ describe("Admin API access", () => {
 
             cy.request({
               method: "GET",
-              url: `${API_URL}/api/admin/screenings?from=2000-01-01&to=2100-01-01`,
+              url: `${API_URL}/api/admin/screenings?from=${
+                new Date().toISOString().slice(0, 10)
+              }&to=${new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)}`,
               headers: { Authorization: `Bearer ${adminToken}` },
             }).then((screeningsResponse) => {
               expect(screeningsResponse.body.some((item) => item.startsAt === startsAt)).to.eq(false);
