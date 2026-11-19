@@ -29,7 +29,9 @@ function SelectionSummary({
 }) {
   const [step, setStep] = useState("seats");
   const [email, setEmail] = useState("");
-  const [ageDialogOpen, setAgeDialogOpen] = useState(false);
+  // A counter, not a boolean: the dialog closes natively and its close event arrives
+  // asynchronously, so a mirrored "open" state could still be true when Continue is clicked again.
+  const [ageDialogRequest, setAgeDialogRequest] = useState(0);
   // Storing the screening id (not a boolean) makes the confirmation reset for another screening.
   const [ageConfirmedFor, setAgeConfirmedFor] = useState(null);
   const ticketCount = seats.length + wheelchairSpaces;
@@ -41,12 +43,11 @@ function SelectionSummary({
   const needsAgeCheck = requiresAgeCheck(ageRating) && ageConfirmedFor !== screeningId;
 
   function handleContinue() {
-    if (needsAgeCheck) setAgeDialogOpen(true);
+    if (needsAgeCheck) setAgeDialogRequest((n) => n + 1);
     else setStep("email");
   }
 
   function confirmAgeRating() {
-    setAgeDialogOpen(false);
     setAgeConfirmedFor(screeningId);
     setStep("email");
   }
@@ -203,11 +204,10 @@ function SelectionSummary({
 
       {requiresAgeCheck(ageRating) && (
         <AgeRatingDialog
-          open={ageDialogOpen}
+          openRequest={ageDialogRequest}
           rating={ageRating}
           movieTitle={movieTitle}
           onConfirm={confirmAgeRating}
-          onCancel={() => setAgeDialogOpen(false)}
         />
       )}
     </aside>
