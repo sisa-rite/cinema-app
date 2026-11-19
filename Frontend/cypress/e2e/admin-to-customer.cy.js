@@ -14,6 +14,8 @@ function timeFor(offsetMinutes) {
 }
 
 function fillScreening({ movieId, time, price, published, premiere = false }) {
+  cy.location("pathname").should("eq", "/admin/screenings/new");
+  cy.get("#screening-movieId").should("exist");
   cy.get("#screening-movieId").select(String(movieId));
   cy.get("#screening-hallId option").then((options) => {
     const hall = [...options].find((item) => item.value);
