@@ -10,8 +10,8 @@ import SelectionSummary from "../components/SelectionSummary.jsx";
 import StateMessage from "../components/StateMessage.jsx";
 import { saveBookingEmail } from "../utils/bookingStorage.js";
 import { formatDayLabel, formatTime } from "../utils/format.js";
+import { MAX_TICKETS } from "../utils/tickets.js";
 
-const MAX_SEATS = 10;
 const DEFAULT_TITLE = "Rio Theatres";
 const NOT_FOUND_CODES = new Set(["SCREENING_NOT_FOUND", "INVALID_ID"]);
 const CONTAINER_CLASSES = "mx-auto max-w-7xl px-4 py-8 sm:px-6";
@@ -30,9 +30,17 @@ function takenSeatsMessage(seats, takenIds) {
   return `Sorry, someone was faster: ${names.join(", ")} ${verb} no longer available.`;
 }
 
+function wheelchairUnavailableMessage(available) {
+  if (available === 0) return "Sorry, someone was faster: there are no wheelchair spaces left.";
+  const spaces = available === 1 ? "1 wheelchair space is" : `${available} wheelchair spaces are`;
+  return `Sorry, someone was faster: only ${spaces} left.`;
+}
+
 function SeatSelection({ initialData, initialLoadedAt }) {
   const [data, setData] = useState({ ...initialData, loadedAt: initialLoadedAt });
   const [selection, setSelection] = useState({ ids: [], dropped: false });
+  const [childTickets, setChildTickets] = useState(0);
+  const [wheelchairSpaces, setWheelchairSpaces] = useState(0);
   const [refreshStatus, setRefreshStatus] = useState("idle");
   const [hold, setHold] = useState(IDLE_HOLD);
   const [serverClosed, setServerClosed] = useState(false);
@@ -48,6 +56,11 @@ function SeatSelection({ initialData, initialLoadedAt }) {
   const selectedSeats = seats
     .filter((seat) => selection.ids.includes(seat.id))
     .sort(bySeatPosition);
+  const maxSeats = MAX_TICKETS - wheelchairSpaces;
+
+  // Seats are removed in several places (clicks, refresh, taken seats); capping the
+  // child tickets during render keeps them within the seats for all of them.
+  if (childTickets > selectedSeats.length) setChildTickets(selectedSeats.length);
 
   useEffect(() => {
     document.title = `${movie.title} — ${screeningLabel} — ${DEFAULT_TITLE}`;
@@ -62,7 +75,7 @@ function SeatSelection({ initialData, initialLoadedAt }) {
     setHold((current) => (current.alert ? { ...current, alert: null } : current));
     setSelection(({ ids, dropped }) => {
       if (ids.includes(seatId)) return { ids: ids.filter((id) => id !== seatId), dropped };
-      if (ids.length >= MAX_SEATS) return { ids, dropped };
+      if (ids.length >= maxSeats) return { ids, dropped };
       return { ids: [...ids, seatId], dropped };
     });
   }
@@ -78,10 +91,13 @@ function SeatSelection({ initialData, initialLoadedAt }) {
       const available = new Set(
         next.seats.filter((seat) => seat.state === "available").map((seat) => seat.id),
       );
+      const wheelchairLeft = next.screening.wheelchairSpaces.available;
+      const wheelchairDropped = wheelchairSpaces > wheelchairLeft;
       setData({ ...next, loadedAt: Date.now() });
+      setWheelchairSpaces((count) => Math.min(count, wheelchairLeft));
       setSelection(({ ids }) => {
         const kept = ids.filter((id) => available.has(id));
-        return { ids: kept, dropped: kept.length < ids.length };
+        return { ids: kept, dropped: kept.length < ids.length || wheelchairDropped };
       });
       setRefreshStatus("idle");
     } catch {
@@ -98,6 +114,8 @@ function SeatSelection({ initialData, initialLoadedAt }) {
       const booking = await createBooking({
         screeningId: screening.id,
         seatIds: selectedSeats.map((seat) => seat.id),
+        childTickets: Math.min(childTickets, selectedSeats.length),
+        wheelchairSpaces,
         email,
       });
       saveBookingEmail(booking.reference, email);
@@ -114,6 +132,11 @@ function SeatSelection({ initialData, initialLoadedAt }) {
         setHold({ ...IDLE_HOLD, alert: { text: takenSeatsMessage(seats, takenIds), retry: false } });
         setSelection(({ ids }) => ({ ids: ids.filter((id) => !takenIds.includes(id)), dropped: false }));
         refreshSeats();
+      } else if (code === "WHEELCHAIR_SPACES_UNAVAILABLE") {
+        const left = error.details?.available ?? 0;
+        setHold({ ...IDLE_HOLD, alert: { text: wheelchairUnavailableMessage(left), retry: false } });
+        setWheelchairSpaces((count) => Math.min(count, left));
+        refreshSeats();
       } else if (code === "VALIDATION_ERROR" && (error.details?.fields?.email || error.details?.fields?.seatIds)) {
         setHold({ ...IDLE_HOLD, fieldErrors: error.details.fields });
       } else {
@@ -128,7 +151,7 @@ function SeatSelection({ initialData, initialLoadedAt }) {
   let refreshMessage = "";
   if (refreshStatus === "loading") refreshMessage = "Refreshing seats…";
   else if (refreshStatus === "failed") refreshMessage = "We couldn’t refresh the seats. Please try again.";
-  else if (selection.dropped) refreshMessage = "Some of your selected seats are no longer available.";
+  else if (selection.dropped) refreshMessage = "Some of your selected tickets are no longer available.";
 
   return (
     <div className={CONTAINER_CLASSES}>
@@ -187,7 +210,7 @@ function SeatSelection({ initialData, initialLoadedAt }) {
             selectedIds={selection.ids}
             onToggle={toggleSeat}
             hallName={hall.name}
-            maxSelected={MAX_SEATS}
+            maxSelected={maxSeats}
             readOnly={salesClosed}
           />
           <SeatLegend />
@@ -198,7 +221,13 @@ function SeatSelection({ initialData, initialLoadedAt }) {
             movieTitle={movie.title}
             ageRating={movie.ageRating}
             seats={selectedSeats}
-            basePrice={screening.basePrice}
+            prices={screening.prices}
+            childMaxAge={screening.childMaxAge}
+            childTickets={Math.min(childTickets, selectedSeats.length)}
+            onChildTicketsChange={setChildTickets}
+            wheelchairSpaces={wheelchairSpaces}
+            wheelchairAvailable={screening.wheelchairSpaces.available}
+            onWheelchairSpacesChange={setWheelchairSpaces}
             onHold={holdSeats}
             submitting={hold.submitting}
             fieldErrors={hold.fieldErrors}

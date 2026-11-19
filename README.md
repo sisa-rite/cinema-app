@@ -124,7 +124,8 @@ Example detail response:
       "theatreName": "Rio Oulu",
       "hallName": "Hall 1",
       "basePrice": 12.5,
-      "isPremiere": true
+      "isPremiere": true,
+      "prices": { "adult": 14.38, "child": 7.19 }
     }
   ]
 }

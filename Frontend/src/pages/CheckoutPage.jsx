@@ -19,6 +19,9 @@ const TEXT_LINK_CLASSES =
   "rounded-sm font-semibold text-rio-gold underline-offset-4 hover:underline";
 const GOLD_BUTTON_CLASSES =
   "rounded-full bg-rio-gold px-6 py-2.5 font-semibold text-rio-black transition-colors hover:bg-rio-gold-light disabled:cursor-not-allowed disabled:opacity-50";
+const CHIP_CLASSES =
+  "rounded-full border border-rio-gold/50 px-3 py-1 text-xs font-semibold text-rio-gold-light";
+const TICKET_TYPE_LABELS = { adult: "Adult", child: "Child" };
 
 function formatRemaining(seconds) {
   const minutes = Math.floor(seconds / 60);
@@ -103,22 +106,25 @@ function sortSeats(seats) {
   return [...seats].sort((a, b) => a.rowNumber - b.rowNumber || a.seatNumber - b.seatNumber);
 }
 
-function SeatChips({ seats }) {
+function SeatChips({ booking }) {
+  const { seats, wheelchairSpaces } = booking;
   return (
     <ul aria-label="Your seats" className="flex flex-wrap gap-2">
       {sortSeats(seats).map((seat) => (
-        <li
-          key={seat.id}
-          className="rounded-full border border-rio-gold/50 px-3 py-1 text-xs font-semibold text-rio-gold-light"
-        >
-          Row {seat.rowNumber} · Seat {seat.seatNumber}
+        <li key={seat.id} className={CHIP_CLASSES}>
+          Row {seat.rowNumber} · Seat {seat.seatNumber} · {TICKET_TYPE_LABELS[seat.ticketType]}
         </li>
       ))}
+      {wheelchairSpaces > 0 && (
+        <li className={CHIP_CLASSES}>
+          {wheelchairSpaces} × Wheelchair space · in front of row 1
+        </li>
+      )}
     </ul>
   );
 }
 
-function ScreeningDetails({ screening, seats }) {
+function ScreeningDetails({ screening, booking }) {
   const { movie, theatre, hall } = screening;
 
   return (
@@ -139,7 +145,7 @@ function ScreeningDetails({ screening, seats }) {
         <p className="text-sm text-white/75">
           {theatre.name} · {hall.name}
         </p>
-        <SeatChips seats={seats} />
+        <SeatChips booking={booking} />
       </div>
     </section>
   );
@@ -176,11 +182,11 @@ function BookingConfirmation({ booking, screening, moviesPath }) {
 
       <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start">
         {screening ? (
-          <ScreeningDetails screening={screening} seats={booking.seats} />
+          <ScreeningDetails screening={screening} booking={booking} />
         ) : (
           <div className="space-y-3">
             <p className="text-white/75">Screening details are not available.</p>
-            <SeatChips seats={booking.seats} />
+            <SeatChips booking={booking} />
           </div>
         )}
 
@@ -290,7 +296,7 @@ function HeldBooking({ booking, screening, email, onPaid, onPayError }) {
           </p>
 
           <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start">
-            <ScreeningDetails screening={screening} seats={booking.seats} />
+            <ScreeningDetails screening={screening} booking={booking} />
 
             <aside
               aria-labelledby="checkout-summary-title"

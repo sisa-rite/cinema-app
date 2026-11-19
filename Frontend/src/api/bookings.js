@@ -1,7 +1,7 @@
 import { apiGet, apiPost } from "./client.js";
 
-export function createBooking({ screeningId, seatIds, email }) {
-  return apiPost("/api/bookings", { screeningId, seatIds, email });
+export function createBooking({ screeningId, seatIds, childTickets, wheelchairSpaces, email }) {
+  return apiPost("/api/bookings", { screeningId, seatIds, childTickets, wheelchairSpaces, email });
 }
 
 export function getBooking(reference, email, { signal } = {}) {
