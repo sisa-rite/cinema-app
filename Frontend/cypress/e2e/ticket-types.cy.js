@@ -38,27 +38,27 @@ function expectTotal(amount) {
 }
 
 describe("Ticket types and wheelchair spaces", () => {
-  it("keeps adult and child tickets equal to the selected seats and books them", () => {
+  it("turns seats into child tickets and books them", () => {
     const email = `e2e-${Date.now()}@test.rio`;
     openScreening().then((prices) => {
-      step("Add adult ticket").should("be.disabled");
       step("Add child ticket").should("be.disabled");
       step("Add wheelchair space").should("be.enabled");
 
       selectSeats(2);
-      count("adult-tickets").should("have.text", "2");
       count("child-tickets").should("have.text", "0");
-      step("Add child ticket").should("be.disabled");
+      cy.get('[data-testid="adult-tickets"]').should("contain", "2 × Adult ticket");
       expectTotal(prices.adult * 2);
-
-      step("Remove adult ticket").click();
-      cy.contains("Choose a ticket type for 1 more seat.");
-      cy.contains("button", "Continue").should("be.disabled");
 
       step("Add child ticket").click();
       count("child-tickets").should("have.text", "1");
-      step("Add adult ticket").should("be.disabled");
+      cy.get('[data-testid="adult-tickets"]').should("contain", "1 × Adult ticket");
       expectTotal(prices.adult + prices.child);
+
+      step("Add child ticket").click();
+      step("Add child ticket").should("be.disabled");
+      cy.get('[data-testid="adult-tickets"]').should("contain", "0 × Adult ticket");
+      expectTotal(prices.child * 2);
+      step("Remove child ticket").click();
 
       cy.contains("button", "Continue").click();
       cy.get('input[type="email"]').type(email);
