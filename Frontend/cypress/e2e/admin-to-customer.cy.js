@@ -89,7 +89,7 @@ describe("Admin changes reach customers", () => {
           .should("have.length.at.least", 2);
         cy.get('[data-testid="seat-map"] button[aria-label$=", available"]').eq(0).click();
         cy.get('[data-testid="seat-map"] button[aria-label$=", available"]').eq(0).click();
-        cy.contains("button", "Add child ticket").click();
+        cy.get('button[aria-label="Add child ticket"]').click();
         cy.get('[data-testid="selection-total"]').should("have.text", "17,25 €");
 
         cy.get('[data-testid="seat-map"] button[aria-label$=", selected"]').then(($selected) => {
