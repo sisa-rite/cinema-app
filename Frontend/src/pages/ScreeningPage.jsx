@@ -10,7 +10,7 @@ import SelectionSummary from "../components/SelectionSummary.jsx";
 import StateMessage from "../components/StateMessage.jsx";
 import { saveBookingEmail } from "../utils/bookingStorage.js";
 import { formatDayLabel, formatTime } from "../utils/format.js";
-import { MAX_TICKETS, fitTicketTypes } from "../utils/tickets.js";
+import { MAX_TICKETS } from "../utils/tickets.js";
 
 const DEFAULT_TITLE = "Rio Theatres";
 const NOT_FOUND_CODES = new Set(["SCREENING_NOT_FOUND", "INVALID_ID"]);
@@ -39,7 +39,7 @@ function wheelchairUnavailableMessage(available) {
 function SeatSelection({ initialData, initialLoadedAt }) {
   const [data, setData] = useState({ ...initialData, loadedAt: initialLoadedAt });
   const [selection, setSelection] = useState({ ids: [], dropped: false });
-  const [ticketTypes, setTicketTypes] = useState({ adult: 0, child: 0, seatCount: 0 });
+  const [childTickets, setChildTickets] = useState(0);
   const [wheelchairSpaces, setWheelchairSpaces] = useState(0);
   const [refreshStatus, setRefreshStatus] = useState("idle");
   const [hold, setHold] = useState(IDLE_HOLD);
@@ -58,13 +58,9 @@ function SeatSelection({ initialData, initialLoadedAt }) {
     .sort(bySeatPosition);
   const maxSeats = MAX_TICKETS - wheelchairSpaces;
 
-  // Seats change in several places (clicks, refresh, taken seats); adjusting the
-  // adult/child split during render keeps it in step with all of them.
-  let types = ticketTypes;
-  if (types.seatCount !== selectedSeats.length) {
-    types = fitTicketTypes(types, selectedSeats.length);
-    setTicketTypes(types);
-  }
+  // Seats are removed in several places (clicks, refresh, taken seats); capping the
+  // child tickets during render keeps them within the seats for all of them.
+  if (childTickets > selectedSeats.length) setChildTickets(selectedSeats.length);
 
   useEffect(() => {
     document.title = `${movie.title} — ${screeningLabel} — ${DEFAULT_TITLE}`;
@@ -118,7 +114,7 @@ function SeatSelection({ initialData, initialLoadedAt }) {
       const booking = await createBooking({
         screeningId: screening.id,
         seatIds: selectedSeats.map((seat) => seat.id),
-        childTickets: types.child,
+        childTickets: Math.min(childTickets, selectedSeats.length),
         wheelchairSpaces,
         email,
       });
@@ -227,10 +223,8 @@ function SeatSelection({ initialData, initialLoadedAt }) {
             seats={selectedSeats}
             prices={screening.prices}
             childMaxAge={screening.childMaxAge}
-            ticketTypes={types}
-            onTicketTypesChange={(adult, child) =>
-              setTicketTypes({ adult, child, seatCount: selectedSeats.length })
-            }
+            childTickets={Math.min(childTickets, selectedSeats.length)}
+            onChildTicketsChange={setChildTickets}
             wheelchairSpaces={wheelchairSpaces}
             wheelchairAvailable={screening.wheelchairSpaces.available}
             onWheelchairSpacesChange={setWheelchairSpaces}

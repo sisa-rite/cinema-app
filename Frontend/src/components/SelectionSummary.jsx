@@ -17,8 +17,8 @@ function SelectionSummary({
   seats,
   prices,
   childMaxAge,
-  ticketTypes,
-  onTicketTypesChange,
+  childTickets,
+  onChildTicketsChange,
   wheelchairSpaces,
   wheelchairAvailable,
   onWheelchairSpacesChange,
@@ -33,9 +33,8 @@ function SelectionSummary({
   // Storing the screening id (not a boolean) makes the confirmation reset for another screening.
   const [ageConfirmedFor, setAgeConfirmedFor] = useState(null);
   const ticketCount = seats.length + wheelchairSpaces;
-  const assignedSeats = ticketTypes.adult + ticketTypes.child;
-  const unassignedSeats = seats.length - assignedSeats;
-  const canContinue = ticketCount > 0 && unassignedSeats === 0;
+  const adultTickets = seats.length - childTickets;
+  const canContinue = ticketCount > 0;
   const showEmailStep = step === "email" && canContinue;
   const wheelchairMax = Math.min(wheelchairAvailable, MAX_TICKETS - seats.length);
   const needsAgeCheck = requiresAgeCheck(ageRating) && ageConfirmedFor !== screeningId;
@@ -72,7 +71,7 @@ function SelectionSummary({
         <p className="text-right">
           <span className="sr-only">Total: </span>
           <span data-testid="selection-total" className="text-lg font-semibold text-rio-gold-light">
-            {formatPrice(ticketsTotal(prices, ticketTypes, wheelchairSpaces))}
+            {formatPrice(ticketsTotal(prices, seats.length, childTickets, wheelchairSpaces))}
           </span>
         </p>
       </div>
@@ -97,29 +96,17 @@ function SelectionSummary({
 
       <div className="space-y-3 border-t border-rio-gold/20 pt-3">
         <TicketCounter
-          id="adult-tickets"
-          label="Adult ticket"
-          description={formatPrice(prices.adult)}
-          value={ticketTypes.adult}
-          onChange={(adult) => onTicketTypesChange(adult, ticketTypes.child)}
-          canDecrement={!submitting && ticketTypes.adult > 0}
-          canIncrement={!submitting && unassignedSeats > 0}
-        />
-        <TicketCounter
           id="child-tickets"
           label="Child ticket"
           description={`Up to ${childMaxAge} years · ${formatPrice(prices.child)}`}
-          value={ticketTypes.child}
-          onChange={(child) => onTicketTypesChange(ticketTypes.adult, child)}
-          canDecrement={!submitting && ticketTypes.child > 0}
-          canIncrement={!submitting && unassignedSeats > 0}
+          value={childTickets}
+          onChange={onChildTicketsChange}
+          canDecrement={!submitting && childTickets > 0}
+          canIncrement={!submitting && childTickets < seats.length}
         />
-        {unassignedSeats > 0 && (
-          <p role="status" className="text-xs text-rio-gold-light">
-            Choose a ticket type for {unassignedSeats} more{" "}
-            {unassignedSeats === 1 ? "seat" : "seats"}.
-          </p>
-        )}
+        <p data-testid="adult-tickets" className="text-xs text-white/60">
+          {adultTickets} × Adult ticket · {formatPrice(prices.adult)}
+        </p>
       </div>
 
       <div className="space-y-2 border-t border-rio-gold/20 pt-3">
