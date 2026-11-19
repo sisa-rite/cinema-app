@@ -26,7 +26,7 @@ function selectFirstAvailableSeat() {
     .invoke("attr", "aria-label")
     .then((label) => {
       cy.get(`[aria-label="${label}"]`).click();
-      cy.contains("h2", "Your seats (1)");
+      cy.contains("h2", "Your tickets (1)");
       // Yields the label the seat has once selected.
       cy.wrap(label.replace(/, available$/, ", selected"));
     });
@@ -47,7 +47,7 @@ function pressEscape() {
 function expectBackOnSeats(selectedLabel) {
   cy.get(DIALOG).should("not.be.visible");
   cy.get(`[aria-label="${selectedLabel}"]`).should("exist");
-  cy.contains("h2", "Your seats (1)");
+  cy.contains("h2", "Your tickets (1)");
   cy.get(EMAIL_INPUT).should("not.exist");
 }
 

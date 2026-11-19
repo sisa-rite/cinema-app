@@ -84,7 +84,7 @@ describe("Customer flow", () => {
           .map((seat) => parseSeatLabel(seat.getAttribute("aria-label")));
 
         picked.forEach(({ label }) => cy.get(`[aria-label="${label}"]`).click());
-        cy.contains("h2", "Your seats (2)");
+        cy.contains("h2", "Your tickets (2)");
         cy.contains("button", "Continue").click();
         cy.get('input[type="email"]').type(email);
         cy.contains("button", "Hold my seats").click();

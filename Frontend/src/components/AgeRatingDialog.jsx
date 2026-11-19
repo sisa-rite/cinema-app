@@ -9,27 +9,30 @@ const SECONDARY_BUTTON_CLASSES =
   "rounded-full border border-rio-gold/60 px-6 py-2.5 font-semibold text-rio-gold transition-colors hover:border-rio-gold hover:bg-rio-gold/10";
 
 // Native modal: the browser traps focus, closes on Esc and restores focus on close.
-function AgeRatingDialog({ open, rating, movieTitle, onConfirm, onCancel }) {
+// Each increment of openRequest opens the dialog; closing is left entirely to the browser.
+function AgeRatingDialog({ openRequest, rating, movieTitle, onConfirm, onCancel }) {
   const titleId = useId();
   const textId = useId();
   const dialogRef = useRef(null);
   const confirmRef = useRef(null);
+  // Starts at the current value so a remount does not reopen an old request.
+  const handledRequest = useRef(openRequest);
 
   useEffect(() => {
     const dialog = dialogRef.current;
-    if (open && !dialog.open) {
+    if (openRequest === handledRequest.current) return;
+    handledRequest.current = openRequest;
+    if (!dialog.open) {
       dialog.returnValue = "";
       dialog.showModal();
       confirmRef.current.focus();
-    } else if (!open && dialog.open) {
-      dialog.close();
     }
-  }, [open]);
+  }, [openRequest]);
 
   // Esc, backdrop click and "Go back" all close without the confirm value.
   function handleClose() {
     if (dialogRef.current.returnValue === CONFIRM) onConfirm();
-    else onCancel();
+    else onCancel?.();
   }
 
   function handleBackdropClick(event) {

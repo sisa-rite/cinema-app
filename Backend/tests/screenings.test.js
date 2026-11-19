@@ -56,8 +56,29 @@ test(
     assert.deepEqual(Object.keys(response.body).sort(), ["screening", "seats"]);
     assert.deepEqual(
       Object.keys(response.body.screening).sort(),
-      ["id", "startsAt", "basePrice", "isPremiere", "movie", "theatre", "hall"].sort(),
+      [
+        "id",
+        "startsAt",
+        "basePrice",
+        "isPremiere",
+        "prices",
+        "childMaxAge",
+        "wheelchairSpaces",
+        "movie",
+        "theatre",
+        "hall",
+      ].sort(),
     );
+    assert.deepEqual(Object.keys(response.body.screening.prices).sort(), [
+      "adult",
+      "child",
+    ]);
+    assert.equal(response.body.screening.childMaxAge, 12);
+    assert.deepEqual(response.body.screening.wheelchairSpaces, {
+      total: 10,
+      available: response.body.screening.wheelchairSpaces.available,
+    });
+    assert.ok(response.body.screening.wheelchairSpaces.available <= 10);
     assert.deepEqual(
       Object.keys(response.body.screening.movie).sort(),
       ["id", "title", "durationMinutes", "ageRating", "posterUrl"].sort(),

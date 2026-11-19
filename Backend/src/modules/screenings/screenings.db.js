@@ -7,7 +7,19 @@ export async function findPublishedScreeningSeats(id) {
             m.duration_minutes, m.age_rating, m.poster_url,
             t.name AS theatre_name, LOWER(t.city) AS theatre_city,
             h.id AS hall_id, h.name AS hall_name,
-            h.total_rows, h.seats_per_row,
+            h.total_rows, h.seats_per_row, h.wheelchair_spaces,
+            (
+              SELECT COUNT(*)::integer
+              FROM tickets AS wt
+              JOIN bookings AS wb ON wb.id = wt.booking_id
+              WHERE wt.screening_id = s.id
+                AND wt.is_wheelchair
+                AND (
+                  wb.status = 'paid'
+                  OR (wb.status = 'reserved' AND wb.payment_deadline > NOW())
+                  OR (wb.status = 'held' AND wb.hold_expires_at > NOW())
+                )
+            ) AS wheelchair_taken,
             seat.id AS seat_id, seat.row_number, seat.seat_number,
             seat.pos_x, seat.pos_y,
             CASE

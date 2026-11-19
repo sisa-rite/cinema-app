@@ -1,3 +1,4 @@
+import { CHILD_MAX_AGE, ticketPrices } from "../bookings/pricing.js";
 import { findPublishedScreeningSeats } from "./screenings.db.js";
 
 export class ScreeningsServiceError extends Error {
@@ -42,6 +43,12 @@ export async function getScreeningSeats(id) {
       startsAt: new Date(row.starts_at).toISOString(),
       basePrice: Number(row.base_price),
       isPremiere: row.is_premiere,
+      prices: ticketPrices(row.base_price, row.is_premiere),
+      childMaxAge: CHILD_MAX_AGE,
+      wheelchairSpaces: {
+        total: row.wheelchair_spaces,
+        available: Math.max(row.wheelchair_spaces - row.wheelchair_taken, 0),
+      },
       movie: {
         id: row.movie_id,
         title: row.movie_title,

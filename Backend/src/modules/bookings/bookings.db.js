@@ -2,9 +2,12 @@ import pool from "../../db.js";
 
 export async function findPublishedScreening(id) {
   const { rows } = await pool.query(
-    `SELECT s.id, s.hall_id, s.base_price, s.starts_at <= NOW() AS sales_closed
+    `SELECT s.id, s.hall_id, s.base_price, s.is_premiere,
+            s.starts_at <= NOW() AS sales_closed,
+            h.wheelchair_spaces
      FROM screenings AS s
      JOIN movies AS m ON m.id = s.movie_id
+     JOIN halls AS h ON h.id = s.hall_id
      WHERE s.id = $1 AND s.published = true AND m.published = true`,
     [id],
   );
@@ -65,6 +68,31 @@ export async function findRequestedSeats(
   return rows;
 }
 
+// Wheelchair tickets have no seat, so the unique seat index cannot protect them;
+// locking the screening makes concurrent wheelchair bookings wait for each other.
+export async function lockScreening(client, screeningId) {
+  await client.query("SELECT id FROM screenings WHERE id = $1 FOR UPDATE", [
+    screeningId,
+  ]);
+}
+
+export async function countTakenWheelchairSpaces(client, screeningId) {
+  const { rows } = await client.query(
+    `SELECT COUNT(*)::integer AS taken
+     FROM tickets AS ticket
+     JOIN bookings AS booking ON booking.id = ticket.booking_id
+     WHERE ticket.screening_id = $1
+       AND ticket.is_wheelchair
+       AND (
+         booking.status = 'paid'
+         OR (booking.status = 'reserved' AND booking.payment_deadline > NOW())
+         OR (booking.status = 'held' AND booking.hold_expires_at > NOW())
+       )`,
+    [screeningId],
+  );
+  return rows[0].taken;
+}
+
 export async function insertBooking(
   client,
   screeningId,
@@ -83,19 +111,20 @@ export async function insertBooking(
   return rows[0];
 }
 
-export async function insertTickets(
-  client,
-  bookingId,
-  screeningId,
-  seatIds,
-  price,
-) {
-  for (const seatId of seatIds) {
+export async function insertTickets(client, bookingId, screeningId, tickets) {
+  for (const ticket of tickets) {
     await client.query(
       `INSERT INTO tickets
-         (booking_id, screening_id, seat_id, ticket_type, price)
-       VALUES ($1, $2, $3, 'adult', $4)`,
-      [bookingId, screeningId, seatId, price],
+         (booking_id, screening_id, seat_id, is_wheelchair, ticket_type, price)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [
+        bookingId,
+        screeningId,
+        ticket.seatId,
+        ticket.isWheelchair,
+        ticket.ticketType,
+        ticket.price,
+      ],
     );
   }
 }
@@ -112,7 +141,9 @@ export async function findBookingByReferenceAndEmail(reference, email) {
             booking.screening_id, booking.guest_email,
             booking.hold_expires_at, booking.total_price,
             payment.paid_at,
-            ticket.seat_id, seat.row_number, seat.seat_number
+            ticket.seat_id, ticket.is_wheelchair, ticket.ticket_type,
+            ticket.price AS ticket_price,
+            seat.row_number, seat.seat_number
      FROM bookings AS booking
      LEFT JOIN tickets AS ticket ON ticket.booking_id = booking.id
      LEFT JOIN seats AS seat ON seat.id = ticket.seat_id
@@ -153,7 +184,9 @@ export async function findBookingResponseById(client, bookingId) {
             booking.screening_id, booking.guest_email,
             booking.hold_expires_at, booking.total_price,
             payment.paid_at,
-            ticket.seat_id, seat.row_number, seat.seat_number
+            ticket.seat_id, ticket.is_wheelchair, ticket.ticket_type,
+            ticket.price AS ticket_price,
+            seat.row_number, seat.seat_number
      FROM bookings AS booking
      LEFT JOIN tickets AS ticket ON ticket.booking_id = booking.id
      LEFT JOIN seats AS seat ON seat.id = ticket.seat_id
