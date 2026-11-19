@@ -9,7 +9,7 @@ const lockedRowMessage = "Has tickets — cannot be changed";
 
 function timeFor(offsetMinutes) {
   const minute = (minuteIndex + offsetMinutes) % 60;
-  const hour = offsetMinutes <= 3 ? 16 : offsetMinutes <= 9 ? 20 : 22;
+  const hour = offsetMinutes <= 3 ? 16 : offsetMinutes <= 9 ? 20 : 23;
   return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 
