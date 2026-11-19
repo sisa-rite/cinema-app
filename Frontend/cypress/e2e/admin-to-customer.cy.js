@@ -118,7 +118,7 @@ describe("Admin changes reach customers", () => {
         });
 
         cy.visit(`/admin/screenings/${screeningId}`);
-        cy.contains(lockedRowMessage);
+        cy.contains("This screening has 1 sold and 0 held tickets");
         cy.get("fieldset").should("have.attr", "disabled");
         cy.contains("button", "Save changes").should("not.exist");
       });
