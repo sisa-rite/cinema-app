@@ -124,7 +124,8 @@ Example detail response:
       "theatreName": "Rio Oulu",
       "hallName": "Hall 1",
       "basePrice": 12.5,
-      "isPremiere": true
+      "isPremiere": true,
+      "prices": { "adult": 14.38, "child": 7.19 }
     }
   ]
 }
@@ -140,6 +141,19 @@ npm run dev
 ```
 
 App runs on http://localhost:5173.
+
+## Testing
+
+```bash
+cd Frontend
+npm run lint
+npm run build
+CYPRESS_SEED_PASSWORD=<SEED_PASSWORD from Backend/.env> npm run cy:run
+```
+
+The Cypress specs run against the real backend, so start the database, backend and frontend and seed the database first.
+In the VS Code terminal, run Cypress with `env -u ELECTRON_RUN_AS_NODE`, otherwise it does not start.
+The admin e2e spec creates hidden "E2E movie …" movies; `npm run seed -- --reset` in `Backend/` removes them locally.
 
 ## Environment variables
 

@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { THEATRES } from "../config/theatres.js";
 
 function Footer() {
@@ -24,9 +25,12 @@ function Footer() {
             </li>
           ))}
         </ul>
-        <p className="mt-10 text-xs text-white/60">
-          © 2026 Rio Theatres — family-run cinemas in Oulu and Tampere
-        </p>
+        <div className="mt-10 flex flex-wrap items-center justify-between gap-4 text-xs text-white/60">
+          <p>© 2026 Rio Theatres — family-run cinemas in Oulu and Tampere</p>
+          <Link to="/staff/login" className="rounded-sm underline-offset-4 hover:text-rio-gold-light hover:underline">
+            Staff login
+          </Link>
+        </div>
       </div>
     </footer>
   );

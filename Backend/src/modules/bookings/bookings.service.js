@@ -1,17 +1,25 @@
 import { randomInt } from "node:crypto";
 import pool from "../../db.js";
 import {
+  countTakenWheelchairSpaces,
   deleteTicketsForBookings,
   expireScreeningHolds,
+  findBookingResponseById,
   findBookingByReferenceAndEmail,
   findPublishedScreening,
   findRequestedSeats,
   insertBooking,
   insertTickets,
+  isScreeningSalesClosed,
+  lockBookingForPayment,
+  lockScreening,
 } from "./bookings.db.js";
+import { ticketPrices, totalPrice } from "./pricing.js";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const REFERENCE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+// BR-005: one online purchase has at most 10 tickets, seats and wheelchair spaces together.
+const MAX_TICKETS = 10;
 
 export class BookingsServiceError extends Error {
   constructor(status, code, message, details) {
@@ -40,16 +48,34 @@ function validateBookingBody(body) {
   if (!Number.isSafeInteger(body.screeningId) || body.screeningId <= 0) {
     fields.screeningId = "Screening id must be a positive integer.";
   }
-  if (
-    !Array.isArray(body.seatIds) ||
-    body.seatIds.length < 1 ||
-    body.seatIds.length > 10 ||
-    body.seatIds.some(
-      (id) => !Number.isSafeInteger(id) || id <= 0,
-    ) ||
-    new Set(body.seatIds).size !== body.seatIds.length
-  ) {
+  const seatIdsValid =
+    Array.isArray(body.seatIds) &&
+    body.seatIds.every((id) => Number.isSafeInteger(id) && id > 0) &&
+    new Set(body.seatIds).size === body.seatIds.length;
+  const childTickets = body.childTickets ?? 0;
+  const wheelchairSpaces = body.wheelchairSpaces ?? 0;
+  const wheelchairValid =
+    Number.isSafeInteger(wheelchairSpaces) &&
+    wheelchairSpaces >= 0 &&
+    wheelchairSpaces <= MAX_TICKETS;
+
+  if (!wheelchairValid) {
+    fields.wheelchairSpaces = "Wheelchair spaces must be a whole number from 0 to 10";
+  }
+  if (!seatIdsValid) {
     fields.seatIds = "Select 1 to 10 unique seats";
+  } else if (wheelchairValid) {
+    const ticketCount = body.seatIds.length + wheelchairSpaces;
+    if (ticketCount < 1 || ticketCount > MAX_TICKETS) {
+      fields.seatIds = "Select 1 to 10 tickets in total";
+    }
+  }
+  if (
+    !Number.isSafeInteger(childTickets) ||
+    childTickets < 0 ||
+    (seatIdsValid && childTickets > body.seatIds.length)
+  ) {
+    fields.childTickets = "Child tickets must be a whole number up to the number of seats";
   }
   if (
     typeof body.email !== "string" ||
@@ -63,8 +89,29 @@ function validateBookingBody(body) {
   return {
     screeningId: body.screeningId,
     seatIds: body.seatIds,
+    childTickets,
+    wheelchairSpaces,
     email: body.email.toLowerCase(),
   };
+}
+
+function validatePaymentBody(body) {
+  if (!body || typeof body !== "object" || Array.isArray(body)) body = {};
+
+  const fields = {};
+  if (
+    typeof body.email !== "string" ||
+    body.email.length > 254 ||
+    !EMAIL_PATTERN.test(body.email)
+  ) {
+    fields.email = "Invalid e-mail address";
+  }
+  if (body.acceptNoRefund !== true) {
+    fields.acceptNoRefund = "Confirm that paid tickets cannot be refunded";
+  }
+  if (Object.keys(fields).length > 0) throw validationError(fields);
+
+  return { email: body.email.toLowerCase() };
 }
 
 function generateReference() {
@@ -108,8 +155,8 @@ async function insertBookingWithReference(
   }
 }
 
-function toBookingResponse(booking, seats) {
-  return {
+function toBookingResponse(booking, seats, includePaidAt = false) {
+  const response = {
     id: booking.id,
     reference: booking.reference,
     status: booking.response_status ?? booking.status,
@@ -124,13 +171,39 @@ function toBookingResponse(booking, seats) {
         id: seat.seat_id,
         rowNumber: seat.row_number,
         seatNumber: seat.seat_number,
+        ticketType: seat.ticket_type,
+        price: Number(seat.ticket_price),
       })),
+    wheelchairSpaces: seats.filter((seat) => seat.is_wheelchair).length,
     totalPrice: Number(booking.total_price),
   };
+  if (includePaidAt) {
+    response.paidAt = booking.paid_at
+      ? new Date(booking.paid_at).toISOString()
+      : null;
+  }
+  return response;
+}
+
+// The last `childTickets` seats become child tickets; seats are interchangeable for pricing.
+function buildTickets(seatIds, childTickets, wheelchairSpaces, prices) {
+  const firstChildIndex = seatIds.length - childTickets;
+  const seatTickets = seatIds.map((seatId, index) => {
+    const ticketType = index < firstChildIndex ? "adult" : "child";
+    return { seatId, isWheelchair: false, ticketType, price: prices[ticketType] };
+  });
+  const wheelchairTickets = Array.from({ length: wheelchairSpaces }, () => ({
+    seatId: null,
+    isWheelchair: true,
+    ticketType: "adult",
+    price: prices.adult,
+  }));
+  return [...seatTickets, ...wheelchairTickets];
 }
 
 export async function createBooking(body) {
-  const { screeningId, seatIds, email } = validateBookingBody(body);
+  const { screeningId, seatIds, childTickets, wheelchairSpaces, email } =
+    validateBookingBody(body);
   const screening = await findPublishedScreening(screeningId);
   if (!screening) {
     throw new BookingsServiceError(
@@ -151,6 +224,8 @@ export async function createBooking(body) {
   try {
     await client.query("BEGIN");
     try {
+      if (wheelchairSpaces > 0) await lockScreening(client, screeningId);
+
       const expiredBookingIds = await expireScreeningHolds(client, screeningId);
       if (expiredBookingIds.length > 0) {
         await deleteTicketsForBookings(client, expiredBookingIds);
@@ -174,31 +249,41 @@ export async function createBooking(body) {
         );
       }
 
-      const totalPrice = Number(screening.base_price) * seatIds.length;
+      if (wheelchairSpaces > 0) {
+        const taken = await countTakenWheelchairSpaces(client, screeningId);
+        const available = Math.max(screening.wheelchair_spaces - taken, 0);
+        if (wheelchairSpaces > available) {
+          throw new BookingsServiceError(
+            409,
+            "WHEELCHAIR_SPACES_UNAVAILABLE",
+            "Not enough wheelchair spaces are left.",
+            { available },
+          );
+        }
+      }
+
+      const tickets = buildTickets(
+        seatIds,
+        childTickets,
+        wheelchairSpaces,
+        ticketPrices(screening.base_price, screening.is_premiere),
+      );
       const booking = await insertBookingWithReference(
         client,
         screeningId,
         email,
-        totalPrice,
+        totalPrice(tickets.map((ticket) => ticket.price)),
       );
       try {
-        await insertTickets(
-          client,
-          booking.id,
-          screeningId,
-          seatIds,
-          screening.base_price,
-        );
+        await insertTickets(client, booking.id, screeningId, tickets);
       } catch (error) {
         if (error.code === "23505") throw new TicketInsertConflict();
         throw error;
       }
 
+      const rows = await findBookingResponseById(client, booking.id);
       await client.query("COMMIT");
-      return toBookingResponse(
-        booking,
-        seats.map((seat) => ({ ...seat, seat_id: seat.id })),
-      );
+      return toBookingResponse(rows[0], rows);
     } catch (error) {
       await client.query("ROLLBACK");
       if (error instanceof TicketInsertConflict) {
@@ -242,5 +327,63 @@ export async function getBooking(reference, email) {
       "The requested booking was not found.",
     );
   }
-  return toBookingResponse(rows[0], rows);
+  return toBookingResponse(rows[0], rows, true);
+}
+
+export async function payBooking(reference, body) {
+  const { email } = validatePaymentBody(body);
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const booking = await lockBookingForPayment(client, reference, email);
+    if (!booking) {
+      throw new BookingsServiceError(
+        404,
+        "BOOKING_NOT_FOUND",
+        "The requested booking was not found.",
+      );
+    }
+
+    if (booking.status === "paid") {
+      const rows = await findBookingResponseById(client, booking.id);
+      await client.query("COMMIT");
+      return toBookingResponse(rows[0], rows, true);
+    }
+
+    if (booking.status !== "held" || booking.hold_expired) {
+      throw new BookingsServiceError(
+        409,
+        "HOLD_EXPIRED",
+        "The booking hold has expired.",
+      );
+    }
+
+    if (await isScreeningSalesClosed(client, booking.screening_id)) {
+      throw new BookingsServiceError(
+        409,
+        "SALES_CLOSED",
+        "Sales for this screening have closed.",
+      );
+    }
+
+    await client.query(
+      "UPDATE bookings SET status = 'paid' WHERE id = $1",
+      [booking.id],
+    );
+    await client.query(
+      `INSERT INTO payments (booking_id, method, amount, paid_at)
+       VALUES ($1, 'online', $2, now())`,
+      [booking.id, booking.total_price],
+    );
+
+    const rows = await findBookingResponseById(client, booking.id);
+    await client.query("COMMIT");
+    return toBookingResponse(rows[0], rows, true);
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 }

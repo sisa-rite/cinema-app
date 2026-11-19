@@ -68,7 +68,7 @@ function Showtime({ screening, city }) {
         {formatTime(screening.startsAt)}
       </time>
       <span className="mt-1 text-sm font-semibold text-rio-gold-light">
-        {formatPrice(screening.basePrice)}
+        {formatPrice(screening.prices.adult)}
       </span>
     </Link>
   );

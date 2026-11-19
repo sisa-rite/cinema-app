@@ -6,6 +6,18 @@ const SHOWTIME_LINKS = 'a[href^="/screenings/"]';
 const SEATS = '[data-testid="seat-map"] button[aria-label^="Row "]';
 const REFERENCE_PATTERN = /^RIO-[A-HJ-NP-Z2-9]{6}$/;
 
+// The age warning (FR-010) has its own spec; here every movie is unrated so the flow
+// does not depend on the seeded ratings.
+function withoutAgeRating() {
+  cy.intercept("GET", "**/api/screenings/*/seats", (req) => {
+    // Without this the browser may revalidate and get an empty 304 instead of the seats.
+    delete req.headers["if-none-match"];
+    req.on("before:response", (res) => {
+      res.body.screening.movie.ageRating = null;
+    });
+  });
+}
+
 function openFirstScreening() {
   cy.visit("/movies?city=oulu");
   cy.get(MOVIE_LINKS).first().click();
@@ -59,8 +71,9 @@ describe("Customer flow", () => {
     });
   });
 
-  it("holds two seats and shows the checkout", () => {
+  it("holds two seats, pays and shows the confirmation", () => {
     const email = `e2e-${Date.now()}@test.rio`;
+    withoutAgeRating();
     openFirstScreening();
 
     cy.get(`${SEATS}[aria-label$=", available"]`)
@@ -71,7 +84,7 @@ describe("Customer flow", () => {
           .map((seat) => parseSeatLabel(seat.getAttribute("aria-label")));
 
         picked.forEach(({ label }) => cy.get(`[aria-label="${label}"]`).click());
-        cy.contains("h2", "Your seats (2)");
+        cy.contains("h2", "Your tickets (2)");
         cy.contains("button", "Continue").click();
         cy.get('input[type="email"]').type(email);
         cy.contains("button", "Hold my seats").click();
@@ -92,6 +105,27 @@ describe("Customer flow", () => {
         cy.get('ul[aria-label="Your seats"] li').should("have.length", 2);
         picked.forEach(({ text }) => {
           cy.get('ul[aria-label="Your seats"]').contains("li", text);
+        });
+
+        cy.get('[data-testid="booking-reference"]').invoke("text").then((reference) => {
+          cy.contains("Paid tickets cannot be refunded or cancelled.");
+          cy.contains("button", "Pay").should("be.disabled");
+          cy.contains("label", "I understand that paid tickets cannot be refunded.").click();
+          cy.contains("button", "Pay").should("be.enabled").click();
+
+          cy.get('[data-testid="booking-confirmation"]')
+            .should("be.visible")
+            .within(() => {
+              cy.contains("h1", "Your tickets are confirmed");
+              cy.get('[data-testid="booking-reference"]').should("have.text", reference);
+              cy.contains("Paid on");
+            });
+          cy.title().should("eq", "Booking confirmed — Rio Theatres");
+
+          cy.reload();
+          cy.get('[data-testid="booking-confirmation"]')
+            .find('[data-testid="booking-reference"]')
+            .should("have.text", reference);
         });
       });
   });
