@@ -1,8 +1,8 @@
 // Runs against the real backend and database. Movies, screenings and seats
 // are always picked from the UI, so the tests survive reseeding and reruns.
+import { openFirstScreening } from "../support/customerFlow.js";
 
 const MOVIE_LINKS = 'a[href^="/movies/"]';
-const SHOWTIME_LINKS = 'a[href^="/screenings/"]';
 const SEATS = '[data-testid="seat-map"] button[aria-label^="Row "]';
 const REFERENCE_PATTERN = /^RIO-[A-HJ-NP-Z2-9]{6}$/;
 
@@ -16,13 +16,6 @@ function withoutAgeRating() {
       res.body.screening.movie.ageRating = null;
     });
   });
-}
-
-function openFirstScreening() {
-  cy.visit("/movies?city=oulu");
-  cy.get(MOVIE_LINKS).first().click();
-  cy.get(SHOWTIME_LINKS).first().click();
-  cy.get('[data-testid="seat-map"]').should("be.visible");
 }
 
 function parseSeatLabel(label) {

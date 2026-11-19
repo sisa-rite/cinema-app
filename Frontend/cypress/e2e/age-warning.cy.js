@@ -1,22 +1,13 @@
 // FR-010: the rating comes from a stubbed seats response, so the tests do not
 // depend on the seeded movies.
+import { openFirstScreening } from "../support/customerFlow.js";
 
 const AVAILABLE_SEATS = '[data-testid="seat-map"] button[aria-label$=", available"]';
 const DIALOG = '[data-testid="age-warning"]';
 const EMAIL_INPUT = 'input[type="email"]';
 
 function openScreeningRated(ageRating) {
-  cy.intercept("GET", "**/api/screenings/*/seats", (req) => {
-    // Without this the browser may revalidate and get an empty 304 instead of the seats.
-    delete req.headers["if-none-match"];
-    req.on("before:response", (res) => {
-      res.body.screening.movie.ageRating = ageRating;
-    });
-  });
-  cy.visit("/movies?city=oulu");
-  cy.get('a[href^="/movies/"]').first().click();
-  cy.get('a[href^="/screenings/"]').first().click();
-  cy.get('[data-testid="seat-map"]').should("be.visible");
+  openFirstScreening({ ageRating });
 }
 
 function selectFirstAvailableSeat() {

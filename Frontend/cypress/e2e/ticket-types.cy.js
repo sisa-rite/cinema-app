@@ -1,6 +1,7 @@
 // FR-021 / FR-023: adult and child tickets for the selected seats, and wheelchair
 // spaces without a seat. Prices are read from the seats response, so the tests do
 // not depend on the seeded base price or premiere flag.
+import { openFirstScreening } from "../support/customerFlow.js";
 
 const AVAILABLE_SEATS = '[data-testid="seat-map"] button[aria-label$=", available"]';
 const step = (label) => cy.get(`button[aria-label="${label}"]`);
@@ -8,20 +9,13 @@ const count = (id) => cy.get(`[data-testid="${id}-count"]`);
 
 function openScreening() {
   let prices;
-  cy.intercept("GET", "**/api/screenings/*/seats", (req) => {
-    // Without this the browser may revalidate and get an empty 304 instead of the seats.
-    delete req.headers["if-none-match"];
-    req.on("before:response", (res) => {
-      // The age warning (FR-010) has its own spec.
-      res.body.screening.movie.ageRating = null;
-      res.body.screening.wheelchairSpaces.available = 10;
-      prices = res.body.screening.prices;
-    });
+  openFirstScreening({
+    ageRating: null,
+    beforeResponse: (body) => {
+      body.screening.wheelchairSpaces.available = 10;
+      prices = body.screening.prices;
+    },
   });
-  cy.visit("/movies?city=oulu");
-  cy.get('a[href^="/movies/"]').first().click();
-  cy.get('a[href^="/screenings/"]').first().click();
-  cy.get('[data-testid="seat-map"]').should("be.visible");
   // Read once the page has rendered; React's dev double-fetch cancels the first request.
   return cy.then(() => prices);
 }
