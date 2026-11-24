@@ -3,7 +3,9 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 import { getBooking, payBooking } from "../api/bookings.js";
 import { ApiError } from "../api/client.js";
 import { getScreeningSeats } from "../api/screenings.js";
+import { useAuth } from "../auth/useAuth.js";
 import Poster from "../components/Poster.jsx";
+import SeatChips from "../components/SeatChips.jsx";
 import StateMessage from "../components/StateMessage.jsx";
 import { loadBookingEmail, saveBookingEmail } from "../utils/bookingStorage.js";
 import { formatDateTime, formatDayLabel, formatPrice, formatTime } from "../utils/format.js";
@@ -19,9 +21,6 @@ const TEXT_LINK_CLASSES =
   "rounded-sm font-semibold text-rio-gold underline-offset-4 hover:underline";
 const GOLD_BUTTON_CLASSES =
   "rounded-full bg-rio-gold px-6 py-2.5 font-semibold text-rio-black transition-colors hover:bg-rio-gold-light disabled:cursor-not-allowed disabled:opacity-50";
-const CHIP_CLASSES =
-  "rounded-full border border-rio-gold/50 px-3 py-1 text-xs font-semibold text-rio-gold-light";
-const TICKET_TYPE_LABELS = { adult: "Adult", child: "Child" };
 
 function formatRemaining(seconds) {
   const minutes = Math.floor(seconds / 60);
@@ -102,28 +101,6 @@ function CopyReference({ reference }) {
   );
 }
 
-function sortSeats(seats) {
-  return [...seats].sort((a, b) => a.rowNumber - b.rowNumber || a.seatNumber - b.seatNumber);
-}
-
-function SeatChips({ booking }) {
-  const { seats, wheelchairSpaces } = booking;
-  return (
-    <ul aria-label="Your seats" className="flex flex-wrap gap-2">
-      {sortSeats(seats).map((seat) => (
-        <li key={seat.id} className={CHIP_CLASSES}>
-          Row {seat.rowNumber} · Seat {seat.seatNumber} · {TICKET_TYPE_LABELS[seat.ticketType]}
-        </li>
-      ))}
-      {wheelchairSpaces > 0 && (
-        <li className={CHIP_CLASSES}>
-          {wheelchairSpaces} × Wheelchair space · in front of row 1
-        </li>
-      )}
-    </ul>
-  );
-}
-
 function ScreeningDetails({ screening, booking }) {
   const { movie, theatre, hall } = screening;
 
@@ -145,7 +122,7 @@ function ScreeningDetails({ screening, booking }) {
         <p className="text-sm text-white/75">
           {theatre.name} · {hall.name}
         </p>
-        <SeatChips booking={booking} />
+        <SeatChips seats={booking.seats} wheelchairSpaces={booking.wheelchairSpaces} />
       </div>
     </section>
   );
@@ -186,7 +163,7 @@ function BookingConfirmation({ booking, screening, moviesPath }) {
         ) : (
           <div className="space-y-3">
             <p className="text-white/75">Screening details are not available.</p>
-            <SeatChips booking={booking} />
+            <SeatChips seats={booking.seats} wheelchairSpaces={booking.wheelchairSpaces} />
           </div>
         )}
 
@@ -364,10 +341,15 @@ function Checkout({ reference }) {
     email: loadBookingEmail(reference),
     manual: false,
   }));
+  const { user, status } = useAuth();
+  // A customer's own booking opens without asking, e.g. from "My bookings" in a new tab.
+  const accountEmail = user?.role === "customer" ? user.email : null;
+  const email = lookup.email ?? (lookup.manual ? null : accountEmail);
+  const waitingForAccount = email === null && !lookup.manual && status === "loading";
   const [attempt, setAttempt] = useState(0);
   const [result, setResult] = useState({ key: null, data: null, error: null });
-  const requestKey = `${lookup.email}#${attempt}`;
-  const isLoading = lookup.email !== null && result.key !== requestKey;
+  const requestKey = `${email}#${attempt}`;
+  const isLoading = waitingForAccount || (email !== null && result.key !== requestKey);
   const apiCity = isLoading ? undefined : result.data?.screening?.theatre.city;
   const urlCity = searchParams.get("city");
   const city = apiCity ?? urlCity;
@@ -398,11 +380,11 @@ function Checkout({ reference }) {
   }, []);
 
   useEffect(() => {
-    if (lookup.email === null) return undefined;
+    if (email === null) return undefined;
     const controller = new AbortController();
     const { signal } = controller;
 
-    getBooking(reference, lookup.email, { signal })
+    getBooking(reference, email, { signal })
       .then(async (booking) => {
         // A paid booking is always confirmed, even if its screening was hidden later.
         const screening = await getScreeningSeats(booking.screeningId, { signal }).then(
@@ -412,14 +394,14 @@ function Checkout({ reference }) {
             return null;
           },
         );
-        saveBookingEmail(reference, lookup.email);
+        saveBookingEmail(reference, email);
         setResult({ key: requestKey, data: { booking, screening }, error: null });
       })
       .catch((error) => {
         if (!signal.aborted) setResult({ key: requestKey, data: null, error });
       });
     return () => controller.abort();
-  }, [reference, lookup.email, requestKey]);
+  }, [reference, email, requestKey]);
 
   useEffect(() => {
     if (apiCity && urlCity !== apiCity) {
@@ -427,7 +409,7 @@ function Checkout({ reference }) {
     }
   }, [apiCity, urlCity, setSearchParams]);
 
-  if (lookup.email === null) {
+  if (email === null && !waitingForAccount) {
     return <EmailForm onSubmit={(email) => setLookup({ email, manual: true })} />;
   }
 
@@ -512,7 +494,7 @@ function Checkout({ reference }) {
     <HeldBooking
       booking={result.data.booking}
       screening={result.data.screening}
-      email={lookup.email}
+      email={email}
       onPaid={updateBooking}
       onPayError={handlePayError}
     />
