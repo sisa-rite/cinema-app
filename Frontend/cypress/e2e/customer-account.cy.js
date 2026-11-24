@@ -134,6 +134,36 @@ describe("Customer account", () => {
     cy.contains("No bookings yet.");
   });
 
+  it("shows the year for past bookings", () => {
+    stubMyBookings({
+      upcoming: [],
+      past: [
+        {
+          reference: "RIO-PAST22",
+          status: "paid",
+          paymentDeadline: null,
+          paidAt: "2025-11-09T12:08:41.000Z",
+          seats: [{ id: 1, rowNumber: 1, seatNumber: 2, ticketType: "adult", price: 12.5 }],
+          wheelchairSpaces: 0,
+          totalPrice: 12.5,
+          screening: {
+            id: 1,
+            startsAt: "2025-11-12T15:30:00.000Z",
+            movie: { id: 1, title: "Past Movie", posterUrl: null },
+            theatre: { name: "Cinema RIO Oulu", city: "oulu" },
+            hall: { name: "Hall 1" },
+          },
+        },
+      ],
+    });
+    signUp("Past Customer", uniqueEmail());
+
+    cy.contains("section", "Past")
+      .find('[data-testid="booking-card"] time')
+      .first()
+      .should("have.text", "Wed 12 Nov 2025 · 17:30");
+  });
+
   it("offers a different e-mail when the account e-mail finds no booking", () => {
     stubMyBookings();
     signUp("Guest Booking Owner", uniqueEmail());

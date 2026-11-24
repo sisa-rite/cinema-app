@@ -4,7 +4,13 @@ import { getMyBookings } from "../api/me.js";
 import Poster from "../components/Poster.jsx";
 import SeatChips from "../components/SeatChips.jsx";
 import StateMessage from "../components/StateMessage.jsx";
-import { formatDateTime, formatDayLabel, formatPrice, formatTime } from "../utils/format.js";
+import {
+  formatDateTime,
+  formatDayLabel,
+  formatDayLabelWithYear,
+  formatPrice,
+  formatTime,
+} from "../utils/format.js";
 
 const PAGE_TITLE = "My bookings — Rio Theatres";
 const DEFAULT_TITLE = "Rio Theatres";
@@ -33,7 +39,7 @@ function StatusBadge({ status }) {
   );
 }
 
-function BookingCard({ booking }) {
+function BookingCard({ booking, isPast }) {
   const { reference, status, screening } = booking;
   const { movie, theatre, hall } = screening;
   const titleId = `booking-${reference}-title`;
@@ -55,7 +61,9 @@ function BookingCard({ booking }) {
         </div>
         <p className="text-rio-gold-light">
           <time dateTime={screening.startsAt}>
-            {formatDayLabel(screening.startsAt)} · {formatTime(screening.startsAt)}
+            {isPast ? formatDayLabelWithYear(screening.startsAt) : formatDayLabel(screening.startsAt)}
+            {" · "}
+            {formatTime(screening.startsAt)}
           </time>
         </p>
         <p className="text-sm text-white/75">
@@ -102,7 +110,7 @@ function BookingCard({ booking }) {
   );
 }
 
-function BookingSection({ id, title, bookings, emptyText }) {
+function BookingSection({ id, title, bookings, emptyText, isPast = false }) {
   return (
     <section aria-labelledby={id} className="space-y-4">
       <h2 id={id} className="font-display text-2xl font-bold text-rio-gold-light">
@@ -114,7 +122,7 @@ function BookingSection({ id, title, bookings, emptyText }) {
         <ul className="space-y-4">
           {bookings.map((booking) => (
             <li key={booking.reference}>
-              <BookingCard booking={booking} />
+              <BookingCard booking={booking} isPast={isPast} />
             </li>
           ))}
         </ul>
@@ -195,6 +203,7 @@ function MyBookingsPage() {
           title="Past"
           bookings={result.data.past}
           emptyText="No past bookings."
+          isPast
         />
       </div>
     );
