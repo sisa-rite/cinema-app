@@ -54,11 +54,13 @@ function AuthProvider({ children }) {
   );
 
   // Leave the protected page first (committed synchronously), so the route guard
-  // does not see the cleared session and redirect to the login page.
+  // does not see the cleared session and redirect to the login page. "loggingOut"
+  // keeps the staff login page from sending a still logged-in user back to their home.
   const logout = useCallback(async () => {
-    await navigate("/", { flushSync: true });
+    setStatus("loggingOut");
+    await navigate(user?.role === "customer" ? "/" : "/staff/login", { flushSync: true });
     clearSession();
-  }, [navigate, clearSession]);
+  }, [navigate, clearSession, user]);
 
   const value = useMemo(
     () => ({ user, status, login, register, logout }),

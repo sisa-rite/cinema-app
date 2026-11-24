@@ -46,16 +46,16 @@ const router = createBrowserRouter([
             ),
           },
           { path: "/staff/login", element: <StaffLoginPage /> },
-          {
-            path: "/cashier",
-            element: (
-              <RequireRole roles={["cashier", "admin"]}>
-                <CashierPage />
-              </RequireRole>
-            ),
-          },
           { path: "*", element: <NotFoundPage /> },
         ],
+      },
+      {
+        path: "/cashier",
+        element: (
+          <RequireRole roles={["cashier", "admin"]}>
+            <CashierPage />
+          </RequireRole>
+        ),
       },
       {
         path: "/admin",
