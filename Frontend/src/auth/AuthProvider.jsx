@@ -58,8 +58,11 @@ function AuthProvider({ children }) {
   // keeps the staff login page from sending a still logged-in user back to their home.
   const logout = useCallback(async () => {
     setStatus("loggingOut");
-    await navigate(user?.role === "customer" ? "/" : "/staff/login", { flushSync: true });
-    clearSession();
+    try {
+      await navigate(user?.role === "customer" ? "/" : "/staff/login", { flushSync: true });
+    } finally {
+      clearSession();
+    }
   }, [navigate, clearSession, user]);
 
   const value = useMemo(
