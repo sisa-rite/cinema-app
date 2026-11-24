@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { getMe, login as loginRequest } from "../api/auth.js";
+import { getMe, login as loginRequest, register as registerRequest } from "../api/auth.js";
 import { setUnauthorizedHandler } from "../api/client.js";
 import { loadToken, removeToken, saveToken } from "./token.js";
 import { AuthContext } from "./AuthContext.js";
@@ -36,13 +36,22 @@ function AuthProvider({ children }) {
     return () => controller.abort();
   }, []);
 
-  const login = useCallback(async (credentials) => {
-    const { user: loggedInUser, token } = await loginRequest(credentials);
+  const startSession = useCallback(({ user: loggedInUser, token }) => {
     saveToken(token);
     setUser(loggedInUser);
     setStatus("authenticated");
     return loggedInUser;
   }, []);
+
+  const login = useCallback(
+    async (credentials) => startSession(await loginRequest(credentials)),
+    [startSession],
+  );
+
+  const register = useCallback(
+    async (account) => startSession(await registerRequest(account)),
+    [startSession],
+  );
 
   // Leave the protected page first (committed synchronously), so the route guard
   // does not see the cleared session and redirect to the login page.
@@ -51,7 +60,10 @@ function AuthProvider({ children }) {
     clearSession();
   }, [navigate, clearSession]);
 
-  const value = useMemo(() => ({ user, status, login, logout }), [user, status, login, logout]);
+  const value = useMemo(
+    () => ({ user, status, login, register, logout }),
+    [user, status, login, register, logout],
+  );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
