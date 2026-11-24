@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useAuth } from "../auth/useAuth.js";
 import { requiresAgeCheck } from "../utils/ageRating.js";
 import { formatPrice } from "../utils/format.js";
 import { MAX_TICKETS, ticketsTotal } from "../utils/tickets.js";
@@ -28,6 +29,9 @@ function SelectionSummary({
   alert = null,
 }) {
   const [step, setStep] = useState("seats");
+  const { user } = useAuth();
+  // The server books a customer under the account e-mail and ignores this field.
+  const accountEmail = user?.role === "customer" ? user.email : null;
   const [email, setEmail] = useState("");
   // A counter, not a boolean: the dialog closes natively and its close event arrives
   // asynchronously, so a mirrored "open" state could still be true when Continue is clicked again.
@@ -54,7 +58,7 @@ function SelectionSummary({
 
   function handleSubmit(event) {
     event.preventDefault();
-    if (!submitting) onHold(email.trim());
+    if (!submitting) onHold((accountEmail ?? email).trim());
   }
 
   return (
@@ -161,12 +165,22 @@ function SelectionSummary({
               // The "Continue" button that had focus is gone once this step shows.
               autoFocus
               required
-              value={email}
+              readOnly={accountEmail !== null}
+              value={accountEmail ?? email}
               onChange={(event) => setEmail(event.target.value)}
               aria-invalid={fieldErrors.email ? true : undefined}
-              aria-describedby={fieldErrors.email ? "booking-email-error" : undefined}
-              className="w-full rounded-lg border border-rio-gold/40 bg-rio-black px-3 py-2 text-white focus:border-rio-gold"
+              aria-describedby={
+                [accountEmail && "booking-email-hint", fieldErrors.email && "booking-email-error"]
+                  .filter(Boolean)
+                  .join(" ") || undefined
+              }
+              className="w-full rounded-lg border border-rio-gold/40 bg-rio-black px-3 py-2 text-white focus:border-rio-gold read-only:border-rio-gold/20 read-only:text-white/75"
             />
+            {accountEmail && (
+              <p id="booking-email-hint" className="text-xs text-white/70">
+                Your tickets are saved to your account.
+              </p>
+            )}
             {fieldErrors.email && (
               <p id="booking-email-error" className="text-sm text-red-300">
                 {fieldErrors.email}
