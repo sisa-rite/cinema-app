@@ -85,8 +85,8 @@ describe("Customer account", () => {
 
     cy.get(AVAILABLE_SEATS).first().click();
     cy.contains("button", "Continue").click();
-    cy.get("#booking-email").should("have.value", email).and("have.attr", "readonly");
-    cy.contains("button", "Hold my seats").click();
+    cy.get("#booking-email").should("not.exist");
+    cy.contains("button", "Hold my seats").should("be.focused").click();
 
     cy.location("pathname").should("match", /^\/checkout\/RIO-/);
     cy.intercept("POST", "**/api/bookings/*/pay").as("pay");
