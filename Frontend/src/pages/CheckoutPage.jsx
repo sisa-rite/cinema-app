@@ -345,6 +345,7 @@ function Checkout({ reference }) {
   // A customer's own booking opens without asking, e.g. from "My bookings" in a new tab.
   const accountEmail = user?.role === "customer" ? user.email : null;
   const email = lookup.email ?? (lookup.manual ? null : accountEmail);
+  const usesAccountEmail = lookup.email === null && email !== null;
   const waitingForAccount = email === null && !lookup.manual && status === "loading";
   const [attempt, setAttempt] = useState(0);
   const [result, setResult] = useState({ key: null, data: null, error: null });
@@ -434,13 +435,14 @@ function Checkout({ reference }) {
           <p className="text-white/75">
             We couldn’t find a booking with this reference and e-mail address.
           </p>
-          {lookup.manual && (
+          {/* A booking made as a guest is not found under the account e-mail. */}
+          {(lookup.manual || usesAccountEmail) && (
             <button
               type="button"
               onClick={() => setLookup({ email: null, manual: true })}
               className={GOLD_BUTTON_CLASSES}
             >
-              Try another e-mail
+              Use a different e-mail
             </button>
           )}
           <Link to="/" className={TEXT_LINK_CLASSES}>

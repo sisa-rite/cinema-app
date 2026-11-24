@@ -134,6 +134,20 @@ describe("Customer account", () => {
     cy.contains("No bookings yet.");
   });
 
+  it("offers a different e-mail when the account e-mail finds no booking", () => {
+    stubMyBookings();
+    signUp("Guest Booking Owner", uniqueEmail());
+    cy.location("pathname").should("eq", "/my-bookings");
+
+    // A valid reference format that no booking uses.
+    cy.visit("/checkout/RIO-ZZZZZZ");
+    cy.contains("h1", "Booking not found");
+    cy.contains("button", "Use a different e-mail").click();
+
+    cy.contains("h1", "Find your booking");
+    cy.get("#checkout-email").should("have.value", "");
+  });
+
   it("shows EMAIL_TAKEN under the e-mail field", () => {
     const email = uniqueEmail();
     stubMyBookings();
