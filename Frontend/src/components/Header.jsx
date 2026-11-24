@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import logo from "../assets/rio-logo.webp";
+import AccountMenu from "./AccountMenu.jsx";
 import CitySwitcher from "./CitySwitcher.jsx";
 
 function Header() {
@@ -15,7 +16,10 @@ function Header() {
             className="h-12 w-auto"
           />
         </Link>
-        <CitySwitcher />
+        <div className="flex items-center gap-2 sm:gap-4">
+          <CitySwitcher />
+          <AccountMenu />
+        </div>
       </div>
     </header>
   );

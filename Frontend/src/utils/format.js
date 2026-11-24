@@ -147,6 +147,12 @@ export function formatDayLabel(iso, now = new Date()) {
   return dayLabelFormatter.format(new Date(iso));
 }
 
+// "Thu 12 Nov 2026": for past dates, which can be in another year. Built from the day
+// label because en-GB adds a comma after the weekday once the year is included.
+export function formatDayLabelWithYear(iso) {
+  return `${dayLabelFormatter.format(new Date(iso))} ${getDayKey(iso).slice(0, 4)}`;
+}
+
 export function formatWeekdayShort(dayKey) {
   return weekdayShortFormatter.format(dayKeyToDate(dayKey));
 }

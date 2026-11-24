@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useAuth } from "../auth/useAuth.js";
 import { requiresAgeCheck } from "../utils/ageRating.js";
 import { formatPrice } from "../utils/format.js";
 import { MAX_TICKETS, ticketsTotal } from "../utils/tickets.js";
@@ -28,6 +29,9 @@ function SelectionSummary({
   alert = null,
 }) {
   const [step, setStep] = useState("seats");
+  const { user } = useAuth();
+  // The server books a customer under the account e-mail, so customers skip the e-mail field.
+  const accountEmail = user?.role === "customer" ? user.email : null;
   const [email, setEmail] = useState("");
   // A counter, not a boolean: the dialog closes natively and its close event arrives
   // asynchronously, so a mirrored "open" state could still be true when Continue is clicked again.
@@ -54,7 +58,7 @@ function SelectionSummary({
 
   function handleSubmit(event) {
     event.preventDefault();
-    if (!submitting) onHold(email.trim());
+    if (!submitting) onHold((accountEmail ?? email).trim());
   }
 
   return (
@@ -150,32 +154,36 @@ function SelectionSummary({
 
       {showEmailStep ? (
         <form onSubmit={handleSubmit} noValidate className="space-y-3">
-          <div className="space-y-1">
-            <label htmlFor="booking-email" className="block text-sm font-semibold text-rio-gold-light">
-              E-mail for your tickets
-            </label>
-            <input
-              id="booking-email"
-              type="email"
-              autoComplete="email"
-              // The "Continue" button that had focus is gone once this step shows.
-              autoFocus
-              required
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              aria-invalid={fieldErrors.email ? true : undefined}
-              aria-describedby={fieldErrors.email ? "booking-email-error" : undefined}
-              className="w-full rounded-lg border border-rio-gold/40 bg-rio-black px-3 py-2 text-white focus:border-rio-gold"
-            />
-            {fieldErrors.email && (
-              <p id="booking-email-error" className="text-sm text-red-300">
-                {fieldErrors.email}
-              </p>
-            )}
-          </div>
+          {!accountEmail && (
+            <div className="space-y-1">
+              <label htmlFor="booking-email" className="block text-sm font-semibold text-rio-gold-light">
+                E-mail for your tickets
+              </label>
+              <input
+                id="booking-email"
+                type="email"
+                autoComplete="email"
+                // The "Continue" button that had focus is gone once this step shows.
+                autoFocus
+                required
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                aria-invalid={fieldErrors.email ? true : undefined}
+                aria-describedby={fieldErrors.email ? "booking-email-error" : undefined}
+                className="w-full rounded-lg border border-rio-gold/40 bg-rio-black px-3 py-2 text-white focus:border-rio-gold"
+              />
+              {fieldErrors.email && (
+                <p id="booking-email-error" className="text-sm text-red-300">
+                  {fieldErrors.email}
+                </p>
+              )}
+            </div>
+          )}
           <div className="flex items-center gap-4 lg:flex-col lg:items-stretch lg:gap-2">
             <button
               type="submit"
+              // Without the e-mail field, focus moves here from the "Continue" button.
+              autoFocus={accountEmail !== null}
               disabled={submitting}
               className={`${GOLD_BUTTON_CLASSES} disabled:cursor-wait`}
             >

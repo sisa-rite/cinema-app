@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { getMe, login as loginRequest } from "../api/auth.js";
+import { getMe, login as loginRequest, register as registerRequest } from "../api/auth.js";
 import { setUnauthorizedHandler } from "../api/client.js";
 import { loadToken, removeToken, saveToken } from "./token.js";
 import { AuthContext } from "./AuthContext.js";
@@ -36,22 +36,39 @@ function AuthProvider({ children }) {
     return () => controller.abort();
   }, []);
 
-  const login = useCallback(async (credentials) => {
-    const { user: loggedInUser, token } = await loginRequest(credentials);
+  const startSession = useCallback(({ user: loggedInUser, token }) => {
     saveToken(token);
     setUser(loggedInUser);
     setStatus("authenticated");
     return loggedInUser;
   }, []);
 
-  // Leave the protected page first (committed synchronously), so the route guard
-  // does not see the cleared session and redirect to the login page.
-  const logout = useCallback(async () => {
-    await navigate("/", { flushSync: true });
-    clearSession();
-  }, [navigate, clearSession]);
+  const login = useCallback(
+    async (credentials) => startSession(await loginRequest(credentials)),
+    [startSession],
+  );
 
-  const value = useMemo(() => ({ user, status, login, logout }), [user, status, login, logout]);
+  const register = useCallback(
+    async (account) => startSession(await registerRequest(account)),
+    [startSession],
+  );
+
+  // Leave the protected page first (committed synchronously), so the route guard
+  // does not see the cleared session and redirect to the login page. "loggingOut"
+  // keeps the staff login page from sending a still logged-in user back to their home.
+  const logout = useCallback(async () => {
+    setStatus("loggingOut");
+    try {
+      await navigate(user?.role === "customer" ? "/" : "/staff/login", { flushSync: true });
+    } finally {
+      clearSession();
+    }
+  }, [navigate, clearSession, user]);
+
+  const value = useMemo(
+    () => ({ user, status, login, register, logout }),
+    [user, status, login, register, logout],
+  );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

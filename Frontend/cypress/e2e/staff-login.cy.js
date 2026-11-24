@@ -12,6 +12,7 @@ describe("Staff login", () => {
     logIn("admin@rio.test");
 
     cy.location("pathname").should("eq", "/admin/screenings");
+    cy.contains("header a", "Rio Theatres — Admin").should("have.attr", "href", "/admin");
     cy.get('nav[aria-label="Admin"]').within(() => {
       cy.contains("a", "Movies").should("be.visible");
       cy.contains("a", "Screenings").should("have.attr", "aria-current", "page");
@@ -32,10 +33,23 @@ describe("Staff login", () => {
 
     cy.location("pathname").should("eq", "/cashier");
     cy.contains("Logged in as Oulu Cashier");
+    cy.contains("header a", "Rio Theatres — Cashier").should("have.attr", "href", "/cashier");
+    cy.get('nav[aria-label="Choose cinema"]').should("not.exist");
 
     cy.visit("/admin");
     cy.contains("h1", "You don't have access to this page");
     cy.get('nav[aria-label="Admin"]').should("not.exist");
+  });
+
+  it("sends a cashier back to the staff login after logout", () => {
+    cy.visit("/staff/login");
+    logIn("cashier.oulu@rio.test");
+    cy.location("pathname").should("eq", "/cashier");
+
+    cy.contains("button", "Log out").click();
+    cy.location("pathname").should("eq", "/staff/login");
+    cy.location("search").should("eq", "");
+    cy.contains("h1", "Staff login");
   });
 
   it("logs out and protects admin again", () => {
@@ -44,7 +58,9 @@ describe("Staff login", () => {
     cy.location("pathname").should("eq", "/admin/screenings");
 
     cy.contains("button", "Log out").click();
-    cy.location("pathname").should("eq", "/");
+    cy.location("pathname").should("eq", "/staff/login");
+    cy.location("search").should("eq", "");
+    cy.contains("h1", "Staff login");
 
     cy.visit("/admin");
     cy.location("pathname").should("eq", "/staff/login");
