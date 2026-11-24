@@ -3,7 +3,7 @@ import StateMessage from "../components/StateMessage.jsx";
 import { useAuth } from "./useAuth.js";
 
 // Navigation guard only: the server still checks the role on every protected API call.
-function RequireRole({ roles, children }) {
+function RequireRole({ roles, loginPath = "/staff/login", children }) {
   const { user, status } = useAuth();
   const { pathname, search } = useLocation();
 
@@ -13,7 +13,7 @@ function RequireRole({ roles, children }) {
 
   if (status === "anonymous") {
     const params = new URLSearchParams({ redirect: `${pathname}${search}` });
-    return <Navigate to={`/staff/login?${params}`} replace />;
+    return <Navigate to={`${loginPath}?${params}`} replace />;
   }
 
   if (!roles.includes(user.role)) {
