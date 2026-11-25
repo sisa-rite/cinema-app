@@ -3,7 +3,7 @@ import pool from "../../db.js";
 import {
   countTakenWheelchairSpaces,
   deleteTicketsForBookings,
-  expireScreeningHolds,
+  expireExpiredScreeningBookings,
   findBookingsForCustomer,
   findBookingResponseById,
   findBookingByReferenceAndAccess,
@@ -13,7 +13,9 @@ import {
   insertTickets,
   isScreeningSalesClosed,
   lockBookingForPayment,
+  lockBookingForReservation,
   lockScreening,
+  reserveBooking as updateBookingReservation,
 } from "./bookings.db.js";
 import { ticketPrices, totalPrice } from "./pricing.js";
 
@@ -238,7 +240,10 @@ export async function createBooking(body, user) {
     try {
       if (wheelchairSpaces > 0) await lockScreening(client, screeningId);
 
-      const expiredBookingIds = await expireScreeningHolds(client, screeningId);
+      const expiredBookingIds = await expireExpiredScreeningBookings(
+        client,
+        screeningId,
+      );
       if (expiredBookingIds.length > 0) {
         await deleteTicketsForBookings(client, expiredBookingIds);
       }
@@ -371,7 +376,21 @@ export async function payBooking(reference, body, user) {
       return toBookingResponse(rows[0], rows, true);
     }
 
-    if (booking.status !== "held" || booking.hold_expired) {
+    if (
+      booking.status === "reserved" &&
+      booking.reservation_expired
+    ) {
+      throw new BookingsServiceError(
+        409,
+        "RESERVATION_EXPIRED",
+        "The reservation payment deadline has passed.",
+      );
+    }
+
+    if (
+      (booking.status !== "held" && booking.status !== "reserved") ||
+      (booking.status === "held" && booking.hold_expired)
+    ) {
       throw new BookingsServiceError(
         409,
         "HOLD_EXPIRED",
@@ -403,6 +422,78 @@ export async function payBooking(reference, body, user) {
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function reserveBooking(reference, userId) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    try {
+      const booking = await lockBookingForReservation(client, reference);
+      if (!booking || booking.user_id !== userId) {
+        throw new BookingsServiceError(
+          404,
+          "BOOKING_NOT_FOUND",
+          "The requested booking was not found.",
+        );
+      }
+
+      if (booking.status === "reserved") {
+        if (booking.reservation_expired) {
+          throw new BookingsServiceError(
+            409,
+            "RESERVATION_EXPIRED",
+            "The reservation payment deadline has passed.",
+          );
+        }
+        const rows = await findBookingResponseById(client, booking.id);
+        await client.query("COMMIT");
+        return toBookingResponse(rows[0], rows, true);
+      }
+
+      if (booking.status === "paid") {
+        throw new BookingsServiceError(
+          409,
+          "BOOKING_ALREADY_PAID",
+          "The booking has already been paid.",
+        );
+      }
+
+      if (booking.status !== "held" || booking.hold_expired) {
+        throw new BookingsServiceError(
+          409,
+          "HOLD_EXPIRED",
+          "The booking hold has expired.",
+        );
+      }
+
+      if (booking.sales_closed) {
+        throw new BookingsServiceError(
+          409,
+          "SALES_CLOSED",
+          "Sales for this screening have closed.",
+        );
+      }
+
+      if (booking.reservation_closed) {
+        throw new BookingsServiceError(
+          409,
+          "RESERVATION_CLOSED",
+          "Reservations close 2 hours before the screening. Pay now instead.",
+        );
+      }
+
+      await updateBookingReservation(client, booking.id);
+      const rows = await findBookingResponseById(client, booking.id);
+      await client.query("COMMIT");
+      return toBookingResponse(rows[0], rows, true);
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    }
   } finally {
     client.release();
   }

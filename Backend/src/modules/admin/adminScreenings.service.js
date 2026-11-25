@@ -235,6 +235,7 @@ function toScreeningResponse(row) {
     },
     ticketsSold: row.tickets_sold,
     ticketsHeld: row.tickets_held,
+    ticketsReserved: row.tickets_reserved,
   };
 }
 

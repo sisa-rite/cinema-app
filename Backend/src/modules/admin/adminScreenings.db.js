@@ -15,7 +15,12 @@ const SCREENING_SELECT = `SELECT screening.id, screening.starts_at,
            WHERE booking.status = 'held'
              AND booking.hold_expires_at > NOW()
              AND seat.type IS DISTINCT FROM 'owner'
-         )::integer AS tickets_held
+         )::integer AS tickets_held,
+         COUNT(ticket.id) FILTER (
+           WHERE booking.status = 'reserved'
+             AND booking.payment_deadline > NOW()
+             AND seat.type IS DISTINCT FROM 'owner'
+         )::integer AS tickets_reserved
   FROM screenings AS screening
   JOIN movies AS movie ON movie.id = screening.movie_id
   JOIN halls AS hall ON hall.id = screening.hall_id
@@ -131,7 +136,20 @@ export async function findScreeningForUpdate(client, id) {
 
 export async function screeningHasTickets(client, id) {
   const { rows } = await client.query(
-    "SELECT EXISTS (SELECT 1 FROM tickets WHERE screening_id = $1) AS has_tickets",
+    `SELECT EXISTS (
+       SELECT 1
+       FROM tickets AS ticket
+       JOIN bookings AS booking ON booking.id = ticket.booking_id
+       WHERE ticket.screening_id = $1
+         AND (
+           booking.status = 'paid'
+           OR (booking.status = 'held' AND booking.hold_expires_at > NOW())
+           OR (
+             booking.status = 'reserved'
+             AND booking.payment_deadline > NOW()
+           )
+         )
+     ) AS has_tickets`,
     [id],
   );
   return rows[0].has_tickets;
