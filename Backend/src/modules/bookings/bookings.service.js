@@ -4,8 +4,9 @@ import {
   countTakenWheelchairSpaces,
   deleteTicketsForBookings,
   expireScreeningHolds,
+  findBookingsForCustomer,
   findBookingResponseById,
-  findBookingByReferenceAndEmail,
+  findBookingByReferenceAndAccess,
   findPublishedScreening,
   findRequestedSeats,
   insertBooking,
@@ -41,7 +42,7 @@ function validationError(fields) {
   );
 }
 
-function validateBookingBody(body) {
+function validateBookingBody(body, isCustomer) {
   if (!body || typeof body !== "object" || Array.isArray(body)) body = {};
 
   const fields = {};
@@ -77,12 +78,14 @@ function validateBookingBody(body) {
   ) {
     fields.childTickets = "Child tickets must be a whole number up to the number of seats";
   }
-  if (
-    typeof body.email !== "string" ||
-    body.email.length > 254 ||
-    !EMAIL_PATTERN.test(body.email)
-  ) {
-    fields.email = "Invalid e-mail address";
+  if (!isCustomer) {
+    if (
+      typeof body.email !== "string" ||
+      body.email.length > 254 ||
+      !EMAIL_PATTERN.test(body.email)
+    ) {
+      fields.email = "Invalid e-mail address";
+    }
   }
   if (Object.keys(fields).length > 0) throw validationError(fields);
 
@@ -91,18 +94,21 @@ function validateBookingBody(body) {
     seatIds: body.seatIds,
     childTickets,
     wheelchairSpaces,
-    email: body.email.toLowerCase(),
+    email: isCustomer ? null : body.email.toLowerCase(),
   };
 }
 
-function validatePaymentBody(body) {
+function validatePaymentBody(body, canOmitEmail) {
   if (!body || typeof body !== "object" || Array.isArray(body)) body = {};
 
   const fields = {};
-  if (
-    typeof body.email !== "string" ||
-    body.email.length > 254 ||
-    !EMAIL_PATTERN.test(body.email)
+  if (body.email === undefined && !canOmitEmail) {
+    fields.email = "Invalid e-mail address";
+  } else if (
+    body.email !== undefined &&
+    (typeof body.email !== "string" ||
+      body.email.length > 254 ||
+      !EMAIL_PATTERN.test(body.email))
   ) {
     fields.email = "Invalid e-mail address";
   }
@@ -111,7 +117,7 @@ function validatePaymentBody(body) {
   }
   if (Object.keys(fields).length > 0) throw validationError(fields);
 
-  return { email: body.email.toLowerCase() };
+  return { email: body.email?.toLowerCase() ?? null };
 }
 
 function generateReference() {
@@ -125,6 +131,7 @@ function generateReference() {
 async function insertBookingWithReference(
   client,
   screeningId,
+  userId,
   email,
   totalPrice,
 ) {
@@ -135,6 +142,7 @@ async function insertBookingWithReference(
       const booking = await insertBooking(
         client,
         screeningId,
+        userId,
         email,
         totalPrice,
         generateReference(),
@@ -161,9 +169,12 @@ function toBookingResponse(booking, seats, includePaidAt = false) {
     reference: booking.reference,
     status: booking.response_status ?? booking.status,
     screeningId: booking.screening_id,
-    email: booking.guest_email,
+    email: booking.response_email ?? booking.user_email ?? booking.guest_email,
     holdExpiresAt: booking.hold_expires_at
       ? new Date(booking.hold_expires_at).toISOString()
+      : null,
+    paymentDeadline: booking.payment_deadline
+      ? new Date(booking.payment_deadline).toISOString()
       : null,
     seats: seats
       .filter((seat) => seat.seat_id !== null)
@@ -201,9 +212,10 @@ function buildTickets(seatIds, childTickets, wheelchairSpaces, prices) {
   return [...seatTickets, ...wheelchairTickets];
 }
 
-export async function createBooking(body) {
+export async function createBooking(body, user) {
+  const userId = user?.role === "customer" ? user.id : null;
   const { screeningId, seatIds, childTickets, wheelchairSpaces, email } =
-    validateBookingBody(body);
+    validateBookingBody(body, userId !== null);
   const screening = await findPublishedScreening(screeningId);
   if (!screening) {
     throw new BookingsServiceError(
@@ -271,6 +283,7 @@ export async function createBooking(body) {
       const booking = await insertBookingWithReference(
         client,
         screeningId,
+        userId,
         email,
         totalPrice(tickets.map((ticket) => ticket.price)),
       );
@@ -311,15 +324,16 @@ export async function createBooking(body) {
   }
 }
 
-export async function getBooking(reference, email) {
-  if (typeof email !== "string") {
-    throw new BookingsServiceError(
-      404,
-      "BOOKING_NOT_FOUND",
-      "The requested booking was not found.",
-    );
-  }
-  const rows = await findBookingByReferenceAndEmail(reference, email);
+function customerId(user) {
+  return user?.role === "customer" ? user.id : null;
+}
+
+export async function getBooking(reference, email, user) {
+  const rows = await findBookingByReferenceAndAccess(
+    reference,
+    email,
+    customerId(user),
+  );
   if (rows.length === 0) {
     throw new BookingsServiceError(
       404,
@@ -330,13 +344,19 @@ export async function getBooking(reference, email) {
   return toBookingResponse(rows[0], rows, true);
 }
 
-export async function payBooking(reference, body) {
-  const { email } = validatePaymentBody(body);
+export async function payBooking(reference, body, user) {
+  const ownerId = customerId(user);
+  const { email } = validatePaymentBody(body, ownerId !== null);
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
 
-    const booking = await lockBookingForPayment(client, reference, email);
+    const booking = await lockBookingForPayment(
+      client,
+      reference,
+      email,
+      ownerId,
+    );
     if (!booking) {
       throw new BookingsServiceError(
         404,
@@ -386,4 +406,56 @@ export async function payBooking(reference, body) {
   } finally {
     client.release();
   }
+}
+
+export async function getMyBookings(userId) {
+  const rows = await findBookingsForCustomer(userId);
+  const bookingsById = new Map();
+  for (const row of rows) {
+    let booking = bookingsById.get(row.id);
+    if (!booking) {
+      booking = {
+        upcoming: row.is_upcoming,
+        item: {
+          reference: row.reference,
+          status: row.response_status,
+          paymentDeadline: row.payment_deadline
+            ? new Date(row.payment_deadline).toISOString()
+            : null,
+          paidAt: row.paid_at ? new Date(row.paid_at).toISOString() : null,
+          seats: [],
+          wheelchairSpaces: 0,
+          totalPrice: Number(row.total_price),
+          screening: {
+            id: row.screening_id,
+            startsAt: new Date(row.starts_at).toISOString(),
+            movie: {
+              id: row.movie_id,
+              title: row.movie_title,
+              posterUrl: row.poster_url,
+            },
+            theatre: { name: row.theatre_name, city: row.theatre_city },
+            hall: { name: row.hall_name },
+          },
+        },
+      };
+      bookingsById.set(row.id, booking);
+    }
+    if (row.is_wheelchair) booking.item.wheelchairSpaces += 1;
+    if (row.seat_id !== null) {
+      booking.item.seats.push({
+        id: row.seat_id,
+        rowNumber: row.row_number,
+        seatNumber: row.seat_number,
+        ticketType: row.ticket_type,
+        price: Number(row.ticket_price),
+      });
+    }
+  }
+
+  const result = { upcoming: [], past: [] };
+  for (const booking of bookingsById.values()) {
+    result[booking.upcoming ? "upcoming" : "past"].push(booking.item);
+  }
+  return result;
 }

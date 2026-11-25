@@ -10,26 +10,20 @@ function unauthorized(res) {
   });
 }
 
-export function requireAuth(req, res, next) {
-  const match = /^Bearer\s+(\S+)$/i.exec(req.get("authorization") ?? "");
-  if (!match) {
-    unauthorized(res);
-    return;
-  }
-
+function getUserFromAuthorization(authorization) {
+  const match = /^Bearer\s+(\S+)$/i.exec(authorization ?? "");
+  if (!match) return null;
   let payload;
   try {
     payload = jwt.verify(match[1], getJwtSecret(), {
       algorithms: ["HS256"],
     });
   } catch {
-    unauthorized(res);
-    return;
+    return null;
   }
 
   if (!payload || typeof payload !== "object") {
-    unauthorized(res);
-    return;
+    return null;
   }
 
   const id = Number(payload.sub);
@@ -42,15 +36,39 @@ export function requireAuth(req, res, next) {
       (Number.isSafeInteger(payload.theatreId) && payload.theatreId > 0)
     )
   ) {
-    unauthorized(res);
-    return;
+    return null;
   }
 
-  req.user = {
+  return {
     id,
     role: payload.role,
     theatreId: payload.theatreId,
   };
+}
+
+export function requireAuth(req, res, next) {
+  const user = getUserFromAuthorization(req.get("authorization"));
+  if (!user) {
+    unauthorized(res);
+    return;
+  }
+  req.user = user;
+  next();
+}
+
+export function optionalAuth(req, res, next) {
+  const authorization = req.get("authorization");
+  if (authorization === undefined) {
+    next();
+    return;
+  }
+
+  const user = getUserFromAuthorization(authorization);
+  if (!user) {
+    unauthorized(res);
+    return;
+  }
+  req.user = user;
   next();
 }
 
