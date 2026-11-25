@@ -138,6 +138,7 @@ test(
       "email",
       "holdExpiresAt",
       "id",
+      "paymentDeadline",
       "reference",
       "screeningId",
       "seats",
@@ -149,6 +150,7 @@ test(
     assert.equal(response.body.status, "held");
     assert.equal(response.body.screeningId, screening.id);
     assert.equal(response.body.email, "guest@example.com");
+    assert.equal(response.body.paymentDeadline, null);
     const prices = ticketPrices(screening.base_price, screening.is_premiere);
     assert.equal(response.body.totalPrice, prices.adult * 2);
     assert.equal(response.body.wheelchairSpaces, 0);
