@@ -187,12 +187,14 @@ test(
         "startsAt",
         "theatre",
         "ticketsHeld",
+        "ticketsReserved",
         "ticketsSold",
       ]);
       assert.equal(typeof created.body.startsAt, "string");
       assert.equal(typeof created.body.endsAt, "string");
       assert.equal(created.body.ticketsSold, 0);
       assert.equal(created.body.ticketsHeld, 0);
+      assert.equal(created.body.ticketsReserved, 0);
 
       const details = await request(app)
         .get(`/api/admin/screenings/${created.body.id}`)
