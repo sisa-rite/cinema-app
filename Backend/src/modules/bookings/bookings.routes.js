@@ -5,6 +5,7 @@ import {
   getBooking,
   payBooking,
   reserveBooking,
+  cancelBooking,
 } from "./bookings.service.js";
 import { optionalAuth, requireRole } from "../../middleware/auth.js";
 
@@ -39,5 +40,14 @@ router.post("/:reference/reserve", requireRole("customer"), async (req, res) => 
   const booking = await reserveBooking(req.params.reference, req.user.id);
   res.status(200).json(booking);
 });
+
+router.post(
+  "/:reference/cancel",
+  requireRole("customer"),
+  async (req, res) => {
+    const booking = await cancelBooking(req.params.reference, req.user.id);
+    res.status(200).json(booking);
+  },
+);
 
 export default router;

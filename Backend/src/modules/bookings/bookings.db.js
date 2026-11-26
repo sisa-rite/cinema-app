@@ -213,6 +213,34 @@ export async function lockBookingForReservation(client, reference) {
   return rows[0] ?? null;
 }
 
+export async function lockBookingForCancellation(client, reference, userId) {
+  const { rows } = await client.query(
+    `SELECT booking.id, booking.reference, booking.status,
+            CASE
+              WHEN booking.status = 'held'
+               AND booking.hold_expires_at <= now()
+                THEN 'expired'
+              WHEN booking.status = 'reserved'
+               AND booking.payment_deadline <= now()
+                THEN 'expired'
+              ELSE booking.status
+            END AS response_status,
+            booking.screening_id, booking.guest_email, booking.user_id,
+            account.email AS user_email,
+            COALESCE(account.email, booking.guest_email) AS response_email,
+            booking.hold_expires_at, booking.payment_deadline,
+            booking.total_price,
+            payment.paid_at
+     FROM bookings AS booking
+     LEFT JOIN users AS account ON account.id = booking.user_id
+     LEFT JOIN payments AS payment ON payment.booking_id = booking.id
+     WHERE booking.reference = $1 AND booking.user_id = $2
+     FOR UPDATE OF booking`,
+    [reference, userId],
+  );
+  return rows[0] ?? null;
+}
+
 export async function reserveBooking(client, bookingId) {
   await client.query(
     `UPDATE bookings
