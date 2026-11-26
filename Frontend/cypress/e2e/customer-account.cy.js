@@ -5,10 +5,10 @@ const MOVIE_LINKS = 'a[href^="/movies/"]';
 const SHOWTIME_LINKS = 'a[href^="/screenings/"]';
 const AVAILABLE_SEATS = '[data-testid="seat-map"] button[aria-label$=", available"]';
 
-// TODO(FR-014 backend): GET /api/me/bookings is not merged yet, so it is stubbed here.
-// Remove stubMyBookings() and its calls once the backend serves the endpoint.
-function stubMyBookings(body = { upcoming: [], past: [] }) {
-  cy.intercept("GET", "**/api/me/bookings", { statusCode: 200, body }).as("myBookings");
+// Stays on purpose (not a TODO stub): the seed has no past bookings, and a new account
+// cannot create one, so the past list is the only response stubbed in this spec.
+function stubPastBooking(booking) {
+  cy.intercept("GET", "**/api/me/bookings", { statusCode: 200, body: { upcoming: [], past: [booking] } });
 }
 
 // The age warning (FR-010) has its own spec.
@@ -21,28 +21,8 @@ function withoutAgeRating() {
   });
 }
 
-function myBookingsItem(booking, screening) {
-  return {
-    reference: booking.reference,
-    status: booking.status,
-    paymentDeadline: booking.paymentDeadline,
-    paidAt: booking.paidAt,
-    seats: booking.seats,
-    wheelchairSpaces: booking.wheelchairSpaces,
-    totalPrice: booking.totalPrice,
-    screening: {
-      id: screening.id,
-      startsAt: screening.startsAt,
-      movie: screening.movie,
-      theatre: screening.theatre,
-      hall: screening.hall,
-    },
-  };
-}
-
 describe("Customer account", () => {
   it("signs up and lands on an empty My bookings page", () => {
-    stubMyBookings();
     signUp("E2E Customer", uniqueEmail());
 
     cy.location("pathname").should("eq", "/my-bookings");
@@ -54,7 +34,6 @@ describe("Customer account", () => {
 
   it("logs out and logs in again", () => {
     const email = uniqueEmail();
-    stubMyBookings();
     signUp("Returning Customer", email);
     cy.location("pathname").should("eq", "/my-bookings");
 
@@ -72,16 +51,13 @@ describe("Customer account", () => {
 
   it("buys a ticket while logged in and sees it under Upcoming", () => {
     const email = uniqueEmail();
-    stubMyBookings();
     signUp("Ticket Buyer", email);
     cy.location("pathname").should("eq", "/my-bookings");
 
     withoutAgeRating();
-    cy.intercept("GET", "**/api/screenings/*/seats").as("seats");
     cy.visit("/movies?city=oulu");
     cy.get(MOVIE_LINKS).first().click();
     cy.get(SHOWTIME_LINKS).first().click();
-    cy.wait("@seats").its("response.body.screening").as("screening");
 
     cy.get(AVAILABLE_SEATS).first().click();
     cy.contains("button", "Continue").click();
@@ -96,10 +72,6 @@ describe("Customer account", () => {
 
     cy.wait("@pay").then(({ response }) => {
       const booking = response.body;
-      cy.get("@screening").then((screening) => {
-        stubMyBookings({ upcoming: [myBookingsItem(booking, screening)], past: [] });
-      });
-
       cy.contains("button", "Ticket Buyer").click();
       cy.contains("a", "My bookings").click();
 
@@ -119,7 +91,6 @@ describe("Customer account", () => {
 
   it("sends a logged-out visitor from My bookings to the login and back", () => {
     const email = uniqueEmail();
-    stubMyBookings();
     signUp("Redirected Customer", email);
     cy.location("pathname").should("eq", "/my-bookings");
     logOut("Redirected Customer");
@@ -135,26 +106,21 @@ describe("Customer account", () => {
   });
 
   it("shows the year for past bookings", () => {
-    stubMyBookings({
-      upcoming: [],
-      past: [
-        {
-          reference: "RIO-PAST22",
-          status: "paid",
-          paymentDeadline: null,
-          paidAt: "2025-11-09T12:08:41.000Z",
-          seats: [{ id: 1, rowNumber: 1, seatNumber: 2, ticketType: "adult", price: 12.5 }],
-          wheelchairSpaces: 0,
-          totalPrice: 12.5,
-          screening: {
-            id: 1,
-            startsAt: "2025-11-12T15:30:00.000Z",
-            movie: { id: 1, title: "Past Movie", posterUrl: null },
-            theatre: { name: "Cinema RIO Oulu", city: "oulu" },
-            hall: { name: "Hall 1" },
-          },
-        },
-      ],
+    stubPastBooking({
+      reference: "RIO-PAST22",
+      status: "paid",
+      paymentDeadline: null,
+      paidAt: "2025-11-09T12:08:41.000Z",
+      seats: [{ id: 1, rowNumber: 1, seatNumber: 2, ticketType: "adult", price: 12.5 }],
+      wheelchairSpaces: 0,
+      totalPrice: 12.5,
+      screening: {
+        id: 1,
+        startsAt: "2025-11-12T15:30:00.000Z",
+        movie: { id: 1, title: "Past Movie", posterUrl: null },
+        theatre: { name: "Cinema RIO Oulu", city: "oulu" },
+        hall: { name: "Hall 1" },
+      },
     });
     signUp("Past Customer", uniqueEmail());
 
@@ -165,7 +131,6 @@ describe("Customer account", () => {
   });
 
   it("offers a different e-mail when the account e-mail finds no booking", () => {
-    stubMyBookings();
     signUp("Guest Booking Owner", uniqueEmail());
     cy.location("pathname").should("eq", "/my-bookings");
 
@@ -180,7 +145,6 @@ describe("Customer account", () => {
 
   it("shows EMAIL_TAKEN under the e-mail field", () => {
     const email = uniqueEmail();
-    stubMyBookings();
     signUp("First Owner", email);
     cy.location("pathname").should("eq", "/my-bookings");
     logOut("First Owner");
@@ -208,7 +172,6 @@ describe("Customer account", () => {
 
   it("has no horizontal page scroll on a phone", () => {
     cy.viewport(375, 812);
-    stubMyBookings();
 
     cy.visit("/");
     cy.contains("a", "Log in").should("be.visible");
