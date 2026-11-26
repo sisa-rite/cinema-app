@@ -1,6 +1,7 @@
 import { Router } from "express";
 import {
   createBooking,
+  getMyLoyalty,
   getMyBookings,
   getBooking,
   payBooking,
@@ -20,6 +21,11 @@ router.post("/", optionalAuth, async (req, res) => {
 meBookingsRouter.get("/bookings", requireRole("customer"), async (req, res) => {
   const bookings = await getMyBookings(req.user.id);
   res.status(200).json(bookings);
+});
+
+meBookingsRouter.get("/loyalty", requireRole("customer"), async (req, res) => {
+  const loyalty = await getMyLoyalty(req.user.id);
+  res.status(200).json(loyalty);
 });
 
 router.get("/:reference", optionalAuth, async (req, res) => {

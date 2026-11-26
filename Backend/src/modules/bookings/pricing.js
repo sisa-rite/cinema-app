@@ -6,10 +6,18 @@ export const CHILD_MAX_AGE = 12;
 
 const PREMIERE_PERCENT = 115;
 const CHILD_PERCENT = 50;
+export const LOYALTY_DISCOUNT_NOTE = "Every 10th ticket −50 %";
 
 // Integer cents keep 10 € × 115 % × 50 % at exactly 5.75 €.
 function toEuros(cents) {
   return Math.round(cents) / 100;
+}
+
+function halfPriceToEuros(price) {
+  const [euros, fraction = ""] = String(price).split(".");
+  const unscaledPrice = Number(`${euros}${fraction}`);
+  const cents = Math.round(unscaledPrice * 50 / 10 ** fraction.length);
+  return toEuros(cents);
 }
 
 export function ticketPrices(basePrice, isPremiere) {
@@ -23,4 +31,37 @@ export function ticketPrices(basePrice, isPremiere) {
 
 export function totalPrice(prices) {
   return toEuros(prices.reduce((cents, price) => cents + Math.round(price * 100), 0));
+}
+
+export function applyLoyaltyDiscount({ ticketsSoFar, tickets }) {
+  const pricedTickets = tickets.map((ticket) => ({
+    ...ticket,
+    price: toEuros(Math.round(ticket.price * 100)),
+    discountNote: null,
+  }));
+  const hasDiscountPosition = tickets.some(
+    (_, index) => (ticketsSoFar + index + 1) % 10 === 0,
+  );
+  if (!hasDiscountPosition) return pricedTickets;
+
+  const firstAdultSeat = pricedTickets
+    .filter((ticket) => ticket.ticketType === "adult" && !ticket.isWheelchair)
+    .sort(
+      (left, right) =>
+        left.rowNumber - right.rowNumber ||
+        left.seatNumber - right.seatNumber,
+    )[0];
+  const discountedTicket =
+    firstAdultSeat ??
+    pricedTickets.find(
+      (ticket) => ticket.ticketType === "adult" && ticket.isWheelchair,
+    );
+
+  if (discountedTicket) {
+    const ticketIndex = pricedTickets.indexOf(discountedTicket);
+    discountedTicket.price = halfPriceToEuros(tickets[ticketIndex].price);
+    discountedTicket.discountNote = LOYALTY_DISCOUNT_NOTE;
+  }
+
+  return pricedTickets;
 }
