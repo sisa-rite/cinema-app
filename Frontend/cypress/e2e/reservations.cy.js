@@ -234,6 +234,16 @@ describe("Reservations", () => {
           cy.contains("a", "Pay now").should("not.exist");
         });
 
+        // It stays in place until the next load, then moves to its own section.
+        cy.reload();
+        cy.get('section[aria-labelledby="cancelled-bookings"]').within(() => {
+          cy.contains("h2", "Cancelled");
+          bookingCard(hold.reference)
+            .find('[data-testid="booking-status"]')
+            .should("have.text", "Cancelled");
+        });
+        cy.get('section[aria-labelledby="upcoming-bookings"]').should("not.contain", hold.reference);
+
         // The released seat can be held again right away.
         holdSeat(id, { seat: seatLabel }).its("seatLabel").should("eq", seatLabel);
       });
