@@ -4,6 +4,7 @@ import {
   getMyBookings,
   getBooking,
   payBooking,
+  reserveBooking,
 } from "./bookings.service.js";
 import { optionalAuth, requireRole } from "../../middleware/auth.js";
 
@@ -31,6 +32,11 @@ router.get("/:reference", optionalAuth, async (req, res) => {
 
 router.post("/:reference/pay", optionalAuth, async (req, res) => {
   const booking = await payBooking(req.params.reference, req.body, req.user);
+  res.status(200).json(booking);
+});
+
+router.post("/:reference/reserve", requireRole("customer"), async (req, res) => {
+  const booking = await reserveBooking(req.params.reference, req.user.id);
   res.status(200).json(booking);
 });
 

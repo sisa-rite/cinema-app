@@ -14,13 +14,15 @@ export async function findPublishedScreening(id) {
   return rows[0] ?? null;
 }
 
-export async function expireScreeningHolds(client, screeningId) {
+export async function expireExpiredScreeningBookings(client, screeningId) {
   const { rows } = await client.query(
     `UPDATE bookings
      SET status = 'expired'
      WHERE screening_id = $1
-       AND status = 'held'
-       AND hold_expires_at <= NOW()
+       AND (
+         (status = 'held' AND hold_expires_at <= NOW())
+         OR (status = 'reserved' AND payment_deadline <= NOW())
+       )
      RETURNING id`,
     [screeningId],
   );
@@ -176,7 +178,8 @@ export async function lockBookingForPayment(client, reference, email, userId) {
             COALESCE(account.email, booking.guest_email) AS response_email,
             booking.hold_expires_at, booking.payment_deadline,
             booking.total_price,
-            booking.hold_expires_at <= now() AS hold_expired
+            booking.hold_expires_at <= now() AS hold_expired,
+            booking.payment_deadline <= now() AS reservation_expired
      FROM bookings AS booking
      LEFT JOIN users AS account ON account.id = booking.user_id
      WHERE booking.reference = $1
@@ -188,6 +191,40 @@ export async function lockBookingForPayment(client, reference, email, userId) {
     [reference, email ?? null, userId ?? null],
   );
   return rows[0] ?? null;
+}
+
+export async function lockBookingForReservation(client, reference) {
+  const { rows } = await client.query(
+    `SELECT booking.id, booking.reference, booking.status,
+            booking.screening_id, booking.user_id,
+            booking.hold_expires_at, booking.payment_deadline,
+            booking.hold_expires_at <= now() AS hold_expired,
+            booking.payment_deadline <= now() AS reservation_expired,
+            screening.starts_at <= now() AS sales_closed,
+            now() > screening.starts_at - INTERVAL '2 hours'
+              AS reservation_closed,
+            screening.starts_at
+     FROM bookings AS booking
+     JOIN screenings AS screening ON screening.id = booking.screening_id
+     WHERE booking.reference = $1
+     FOR UPDATE OF booking`,
+    [reference],
+  );
+  return rows[0] ?? null;
+}
+
+export async function reserveBooking(client, bookingId) {
+  await client.query(
+    `UPDATE bookings
+     SET status = 'reserved',
+         payment_deadline = (
+           SELECT starts_at - INTERVAL '2 hours'
+           FROM screenings
+           WHERE screenings.id = bookings.screening_id
+         )
+     WHERE id = $1`,
+    [bookingId],
+  );
 }
 
 export async function isScreeningSalesClosed(client, screeningId) {

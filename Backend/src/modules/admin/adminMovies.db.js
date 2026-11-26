@@ -65,8 +65,20 @@ export async function hasUpcomingTickets(client, movieId) {
        SELECT 1
        FROM screenings
        JOIN tickets ON tickets.screening_id = screenings.id
+       JOIN bookings ON bookings.id = tickets.booking_id
        WHERE screenings.movie_id = $1
          AND screenings.starts_at > NOW()
+         AND (
+           bookings.status = 'paid'
+           OR (
+             bookings.status = 'held'
+             AND bookings.hold_expires_at > NOW()
+           )
+           OR (
+             bookings.status = 'reserved'
+             AND bookings.payment_deadline > NOW()
+           )
+         )
      ) AS has_tickets`,
     [movieId],
   );
