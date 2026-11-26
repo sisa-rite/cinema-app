@@ -367,6 +367,7 @@ test(
         "seats",
         "status",
         "totalPrice",
+        "wheelchairDiscounts",
         "wheelchairSpaces",
       ],
     );

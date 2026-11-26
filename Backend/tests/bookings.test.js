@@ -144,6 +144,7 @@ test(
       "seats",
       "status",
       "totalPrice",
+      "wheelchairDiscounts",
       "wheelchairSpaces",
     ]);
     assert.match(response.body.reference, /^RIO-[A-HJ-NP-Z2-9]{6}$/);
