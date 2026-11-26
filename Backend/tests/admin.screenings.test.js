@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { randomUUID } from "node:crypto";
 import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import request from "supertest";
@@ -76,6 +77,47 @@ async function recordScreening(response) {
     createdScreeningIds.push(response.body.id);
   }
   return response;
+}
+
+async function insertExpiredBookingWithTicket(screeningId, status) {
+  const { rows: seats } = await pool.query(
+    `SELECT id
+     FROM seats
+     WHERE hall_id = (SELECT hall_id FROM screenings WHERE id = $1)
+       AND type = 'normal'
+     ORDER BY id
+     LIMIT 1`,
+    [screeningId],
+  );
+  assert.equal(seats.length, 1);
+
+  const reference = `FR016-cleanup-${randomUUID()}`;
+  const { rows: bookings } = await pool.query(
+    `INSERT INTO bookings
+       (reference, guest_email, screening_id, status,
+        hold_expires_at, payment_deadline, total_price)
+     VALUES (
+       $1, 'cleanup@test.rio', $2, $3,
+       CASE
+         WHEN $3::booking_status = 'held'
+           THEN now() - INTERVAL '1 minute'
+       END,
+       CASE
+         WHEN $3::booking_status = 'reserved'
+           THEN now() - INTERVAL '1 minute'
+       END,
+       1
+     )
+     RETURNING id`,
+    [reference, screeningId, status],
+  );
+  await pool.query(
+    `INSERT INTO tickets
+       (booking_id, screening_id, seat_id, ticket_type, price)
+     VALUES ($1, $2, $3, 'adult', 1)`,
+    [bookings[0].id, screeningId, seats[0].id],
+  );
+  return reference;
 }
 
 test(
@@ -437,6 +479,102 @@ test(
         .set("Authorization", `Bearer ${adminToken}`);
       assert.equal(missing.status, 404);
       assert.equal(missing.body.error.code, "SCREENING_NOT_FOUND");
+    });
+
+    await t.test("deletes a screening with only an expired hold", async () => {
+      const created = await recordScreening(
+        await request(app)
+          .post("/api/admin/screenings")
+          .set("Authorization", `Bearer ${adminToken}`)
+          .send(screeningBody(movieId, hallId, futureStartsAt(31))),
+      );
+      assert.equal(created.status, 201);
+      const reference = await insertExpiredBookingWithTicket(
+        created.body.id,
+        "held",
+      );
+
+      const deletion = await request(app)
+        .delete(`/api/admin/screenings/${created.body.id}`)
+        .set("Authorization", `Bearer ${adminToken}`);
+      assert.equal(deletion.status, 204);
+
+      const { rows } = await pool.query(
+        `SELECT booking.id, ticket.id AS ticket_id, screening.id AS screening_id
+         FROM bookings AS booking
+         LEFT JOIN tickets AS ticket ON ticket.booking_id = booking.id
+         LEFT JOIN screenings AS screening ON screening.id = booking.screening_id
+         WHERE booking.reference = $1`,
+        [reference],
+      );
+      assert.deepEqual(rows, []);
+      const { rows: screenings } = await pool.query(
+        "SELECT id FROM screenings WHERE id = $1",
+        [created.body.id],
+      );
+      assert.deepEqual(screenings, []);
+    });
+
+    await t.test("deletes a screening with only an expired reservation", async () => {
+      const created = await recordScreening(
+        await request(app)
+          .post("/api/admin/screenings")
+          .set("Authorization", `Bearer ${adminToken}`)
+          .send(screeningBody(movieId, hallId, futureStartsAt(32))),
+      );
+      assert.equal(created.status, 201);
+      const reference = await insertExpiredBookingWithTicket(
+        created.body.id,
+        "reserved",
+      );
+
+      const deletion = await request(app)
+        .delete(`/api/admin/screenings/${created.body.id}`)
+        .set("Authorization", `Bearer ${adminToken}`);
+      assert.equal(deletion.status, 204);
+
+      const { rows } = await pool.query(
+        `SELECT booking.id, ticket.id AS ticket_id, screening.id AS screening_id
+         FROM bookings AS booking
+         LEFT JOIN tickets AS ticket ON ticket.booking_id = booking.id
+         LEFT JOIN screenings AS screening ON screening.id = booking.screening_id
+         WHERE booking.reference = $1`,
+        [reference],
+      );
+      assert.deepEqual(rows, []);
+      const { rows: screenings } = await pool.query(
+        "SELECT id FROM screenings WHERE id = $1",
+        [created.body.id],
+      );
+      assert.deepEqual(screenings, []);
+    });
+
+    await t.test("cleans expired bookings before checking screening updates", async () => {
+      const created = await recordScreening(
+        await request(app)
+          .post("/api/admin/screenings")
+          .set("Authorization", `Bearer ${adminToken}`)
+          .send(screeningBody(movieId, hallId, futureStartsAt(33))),
+      );
+      assert.equal(created.status, 201);
+      const reference = await insertExpiredBookingWithTicket(
+        created.body.id,
+        "reserved",
+      );
+
+      const update = await request(app)
+        .patch(`/api/admin/screenings/${created.body.id}`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({ published: true });
+      assert.equal(update.status, 200);
+      const { rows } = await pool.query(
+        `SELECT booking.status, ticket.id AS ticket_id
+         FROM bookings AS booking
+         LEFT JOIN tickets AS ticket ON ticket.booking_id = booking.id
+         WHERE booking.reference = $1`,
+        [reference],
+      );
+      assert.deepEqual(rows, [{ status: "expired", ticket_id: null }]);
     });
   },
 );

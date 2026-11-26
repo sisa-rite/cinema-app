@@ -1,5 +1,9 @@
 import pool from "../../db.js";
 import {
+  deleteTicketsForBookings,
+  expireExpiredScreeningBookings,
+} from "../bookings/bookings.db.js";
+import {
   deleteScreeningBookingsWithoutTickets,
   deleteScreeningRow,
   findAdminScreening,
@@ -355,6 +359,10 @@ export async function updateScreening(pathId, body) {
         "The requested screening was not found.",
       );
     }
+    const expiredBookingIds = await expireExpiredScreeningBookings(client, id);
+    if (expiredBookingIds.length > 0) {
+      await deleteTicketsForBookings(client, expiredBookingIds);
+    }
     if (await screeningHasTickets(client, id)) {
       throw serviceError(
         409,
@@ -391,6 +399,10 @@ export async function deleteScreening(pathId) {
         "SCREENING_NOT_FOUND",
         "The requested screening was not found.",
       );
+    }
+    const expiredBookingIds = await expireExpiredScreeningBookings(client, id);
+    if (expiredBookingIds.length > 0) {
+      await deleteTicketsForBookings(client, expiredBookingIds);
     }
     if (await screeningHasTickets(client, id)) {
       throw serviceError(
