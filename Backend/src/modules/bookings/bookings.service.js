@@ -12,6 +12,7 @@ import {
   insertBooking,
   insertTickets,
   isScreeningSalesClosed,
+  lockBookingForCancellation,
   lockBookingForPayment,
   lockBookingForReservation,
   lockScreening,
@@ -494,6 +495,57 @@ export async function reserveBooking(reference, userId) {
       await client.query("ROLLBACK");
       throw error;
     }
+  } finally {
+    client.release();
+  }
+}
+
+export async function cancelBooking(reference, userId) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const booking = await lockBookingForCancellation(
+      client,
+      reference,
+      userId,
+    );
+    if (!booking) {
+      throw new BookingsServiceError(
+        404,
+        "BOOKING_NOT_FOUND",
+        "The requested booking was not found.",
+      );
+    }
+
+    if (booking.status === "cancelled") {
+      const rows = await findBookingResponseById(client, booking.id);
+      await client.query("COMMIT");
+      return toBookingResponse(rows[0], rows, true);
+    }
+
+    if (booking.response_status === "expired" || booking.status === "paid") {
+      const status = booking.response_status;
+      throw new BookingsServiceError(
+        409,
+        "BOOKING_NOT_CANCELLABLE",
+        "The booking cannot be cancelled.",
+        { status },
+      );
+    }
+
+    await client.query(
+      "UPDATE bookings SET status = 'cancelled' WHERE id = $1",
+      [booking.id],
+    );
+    await deleteTicketsForBookings(client, [booking.id]);
+
+    const rows = await findBookingResponseById(client, booking.id);
+    await client.query("COMMIT");
+    return toBookingResponse(rows[0], rows, true);
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
   } finally {
     client.release();
   }

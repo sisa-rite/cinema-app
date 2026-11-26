@@ -459,3 +459,72 @@ test(
     assert.equal(hideMovie.body.error.code, "MOVIE_HAS_BOOKINGS");
   },
 );
+
+test(
+  "customers cancel reservations and cannot cancel reservations past their deadline",
+  { skip: !hasDatabase },
+  async () => {
+    const customer = await registerCustomer();
+    const screening = await createScreening();
+    const seatId = await findAvailableSeat(screening.id);
+    const hold = await createCustomerHold(customer, screening.id, seatId);
+    assert.equal(hold.status, 201);
+
+    const reservation = await reserve(customer, hold.body.reference);
+    assert.equal(reservation.status, 200);
+    assert.equal(reservation.body.status, "reserved");
+
+    const cancelled = await request(app)
+      .post(`/api/bookings/${hold.body.reference}/cancel`)
+      .set("Authorization", `Bearer ${customer.token}`);
+    assert.equal(cancelled.status, 200);
+    assert.equal(cancelled.body.status, "cancelled");
+    assert.deepEqual(cancelled.body.seats, []);
+
+    const { rows: cancelledTickets } = await pool.query(
+      `SELECT id FROM tickets
+       WHERE booking_id = (
+         SELECT id FROM bookings WHERE reference = $1
+       )`,
+      [hold.body.reference],
+    );
+    assert.equal(cancelledTickets.length, 0);
+
+    const replacementHold = await createCustomerHold(
+      customer,
+      screening.id,
+      seatId,
+    );
+    assert.equal(replacementHold.status, 201);
+
+    const expiredScreening = await createScreening();
+    const expiredSeatId = await findAvailableSeat(expiredScreening.id);
+    const expiringHold = await createCustomerHold(
+      customer,
+      expiredScreening.id,
+      expiredSeatId,
+    );
+    assert.equal(expiringHold.status, 201);
+    const expiredReservation = await reserve(
+      customer,
+      expiringHold.body.reference,
+    );
+    assert.equal(expiredReservation.status, 200);
+    await pool.query(
+      `UPDATE bookings
+       SET payment_deadline = now() - INTERVAL '1 minute'
+       WHERE reference = $1`,
+      [expiringHold.body.reference],
+    );
+
+    const expiredCancellation = await request(app)
+      .post(`/api/bookings/${expiringHold.body.reference}/cancel`)
+      .set("Authorization", `Bearer ${customer.token}`);
+    assert.equal(expiredCancellation.status, 409);
+    assert.equal(
+      expiredCancellation.body.error.code,
+      "BOOKING_NOT_CANCELLABLE",
+    );
+    assert.equal(expiredCancellation.body.error.details.status, "expired");
+  },
+);

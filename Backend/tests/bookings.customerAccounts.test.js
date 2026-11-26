@@ -123,6 +123,47 @@ async function createListedBooking(customer, screening, status, deadline) {
   return reference;
 }
 
+async function createDirectBooking(
+  customer,
+  screening,
+  { status, holdExpiresAt = null, paymentDeadline = null, wheelchair = false },
+) {
+  const reference = `FR018-${randomUUID()}`;
+  const { rows } = await pool.query(
+    `INSERT INTO bookings
+       (reference, user_id, screening_id, status, hold_expires_at,
+        payment_deadline, total_price)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     RETURNING id`,
+    [
+      reference,
+      customer.id,
+      screening.id,
+      status,
+      holdExpiresAt,
+      paymentDeadline,
+      screening.base_price,
+    ],
+  );
+  createdReferences.push(reference);
+  if (wheelchair) {
+    await pool.query(
+      `INSERT INTO tickets
+         (booking_id, screening_id, seat_id, is_wheelchair, ticket_type, price)
+       VALUES ($1, $2, NULL, true, 'adult', $3)`,
+      [rows[0].id, screening.id, screening.base_price],
+    );
+  } else {
+    await pool.query(
+      `INSERT INTO tickets
+         (booking_id, screening_id, seat_id, ticket_type, price)
+       VALUES ($1, $2, $3, 'adult', $4)`,
+      [rows[0].id, screening.id, await findSeat(screening.id), screening.base_price],
+    );
+  }
+  return reference;
+}
+
 function cashierToken() {
   return jwt.sign(
     { sub: "1", role: "cashier", theatreId: 1 },
@@ -364,5 +405,181 @@ test(
         cappedReferences.includes(reference),
       ),
     );
+  },
+);
+
+test(
+  "customers cancel their own holds and immediately release seats",
+  { skip: !hasDatabase },
+  async () => {
+    const customer = await registerCustomer();
+    const otherCustomer = await registerCustomer();
+    const screening = await createScreening(32);
+    const seatId = await findSeat(screening.id);
+    const hold = await request(app)
+      .post("/api/bookings")
+      .set("Authorization", `Bearer ${customer.token}`)
+      .send({ screeningId: screening.id, seatIds: [seatId] });
+    assert.equal(hold.status, 201);
+    createdReferences.push(hold.body.reference);
+
+    const noToken = await request(app).post(
+      `/api/bookings/${hold.body.reference}/cancel`,
+    );
+    assert.equal(noToken.status, 401);
+    assert.equal(noToken.body.error.code, "UNAUTHORIZED");
+
+    const cashier = await request(app)
+      .post(`/api/bookings/${hold.body.reference}/cancel`)
+      .set("Authorization", `Bearer ${cashierToken()}`);
+    assert.equal(cashier.status, 403);
+    assert.equal(cashier.body.error.code, "FORBIDDEN");
+
+    const otherCustomerCancel = await request(app)
+      .post(`/api/bookings/${hold.body.reference}/cancel`)
+      .set("Authorization", `Bearer ${otherCustomer.token}`);
+    assert.equal(otherCustomerCancel.status, 404);
+    assert.equal(otherCustomerCancel.body.error.code, "BOOKING_NOT_FOUND");
+
+    const cancelled = await request(app)
+      .post(`/api/bookings/${hold.body.reference}/cancel`)
+      .set("Authorization", `Bearer ${customer.token}`);
+    assert.equal(cancelled.status, 200);
+    assert.equal(cancelled.body.status, "cancelled");
+    assert.deepEqual(cancelled.body.seats, []);
+    assert.equal(cancelled.body.wheelchairSpaces, 0);
+    assert.equal(cancelled.body.totalPrice, hold.body.totalPrice);
+
+    const rebooked = await request(app)
+      .post("/api/bookings")
+      .set("Authorization", `Bearer ${customer.token}`)
+      .send({ screeningId: screening.id, seatIds: [seatId] });
+    assert.equal(rebooked.status, 201);
+    createdReferences.push(rebooked.body.reference);
+
+    const secondCancel = await request(app)
+      .post(`/api/bookings/${hold.body.reference}/cancel`)
+      .set("Authorization", `Bearer ${customer.token}`);
+    assert.equal(secondCancel.status, 200);
+    assert.equal(secondCancel.body.status, "cancelled");
+    assert.deepEqual(secondCancel.body.seats, []);
+
+    const guestScreening = await createScreening(33);
+    const guestBooking = await request(app).post("/api/bookings").send({
+      screeningId: guestScreening.id,
+      seatIds: [await findSeat(guestScreening.id)],
+      email: `guest-${randomUUID()}@example.test`,
+    });
+    assert.equal(guestBooking.status, 201);
+    createdReferences.push(guestBooking.body.reference);
+    const guestCancel = await request(app)
+      .post(`/api/bookings/${guestBooking.body.reference}/cancel`)
+      .set("Authorization", `Bearer ${customer.token}`);
+    assert.equal(guestCancel.status, 404);
+    assert.equal(guestCancel.body.error.code, "BOOKING_NOT_FOUND");
+  },
+);
+
+test(
+  "customers cancel reservations, release wheelchair spaces, and see empty cancelled bookings",
+  { skip: !hasDatabase },
+  async () => {
+    const customer = await registerCustomer();
+    const screening = await createScreening(34);
+    const { rows: halls } = await pool.query(
+      "SELECT wheelchair_spaces FROM halls WHERE id = $1",
+      [screening.hall_id],
+    );
+    assert.ok(halls[0].wheelchair_spaces > 0);
+
+    const reference = await createDirectBooking(customer, screening, {
+      status: "reserved",
+      paymentDeadline: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      wheelchair: true,
+    });
+    const cancellation = await request(app)
+      .post(`/api/bookings/${reference}/cancel`)
+      .set("Authorization", `Bearer ${customer.token}`);
+    assert.equal(cancellation.status, 200);
+    assert.equal(cancellation.body.status, "cancelled");
+    assert.deepEqual(cancellation.body.seats, []);
+    assert.equal(cancellation.body.wheelchairSpaces, 0);
+    assert.equal(cancellation.body.totalPrice, Number(screening.base_price));
+
+    const myBookings = await request(app)
+      .get("/api/me/bookings")
+      .set("Authorization", `Bearer ${customer.token}`);
+    assert.equal(myBookings.status, 200);
+    const listed = myBookings.body.upcoming.find(
+      (booking) => booking.reference === reference,
+    );
+    assert.ok(listed);
+    assert.equal(listed.status, "cancelled");
+    assert.deepEqual(listed.seats, []);
+    assert.equal(listed.wheelchairSpaces, 0);
+
+    const wheelchairHold = await request(app)
+      .post("/api/bookings")
+      .set("Authorization", `Bearer ${customer.token}`)
+      .send({
+        screeningId: screening.id,
+        seatIds: [],
+        wheelchairSpaces: 1,
+      });
+    assert.equal(wheelchairHold.status, 201);
+    createdReferences.push(wheelchairHold.body.reference);
+  },
+);
+
+test(
+  "cancellation rejects paid and effectively expired bookings with their status",
+  { skip: !hasDatabase },
+  async () => {
+    const customer = await registerCustomer();
+    const paidScreening = await createScreening(35);
+    const paidReference = await createDirectBooking(customer, paidScreening, {
+      status: "paid",
+    });
+    const paid = await request(app)
+      .post(`/api/bookings/${paidReference}/cancel`)
+      .set("Authorization", `Bearer ${customer.token}`);
+    assert.equal(paid.status, 409);
+    assert.equal(paid.body.error.code, "BOOKING_NOT_CANCELLABLE");
+    assert.equal(paid.body.error.details.status, "paid");
+
+    const expiredHoldScreening = await createScreening(36);
+    const expiredHoldReference = await createDirectBooking(
+      customer,
+      expiredHoldScreening,
+      {
+        status: "held",
+        holdExpiresAt: new Date(Date.now() - 60_000),
+      },
+    );
+    const expiredHold = await request(app)
+      .post(`/api/bookings/${expiredHoldReference}/cancel`)
+      .set("Authorization", `Bearer ${customer.token}`);
+    assert.equal(expiredHold.status, 409);
+    assert.equal(expiredHold.body.error.code, "BOOKING_NOT_CANCELLABLE");
+    assert.equal(expiredHold.body.error.details.status, "expired");
+
+    const expiredReservationScreening = await createScreening(37);
+    const expiredReservationReference = await createDirectBooking(
+      customer,
+      expiredReservationScreening,
+      {
+        status: "reserved",
+        paymentDeadline: new Date(Date.now() - 60_000),
+      },
+    );
+    const expiredReservation = await request(app)
+      .post(`/api/bookings/${expiredReservationReference}/cancel`)
+      .set("Authorization", `Bearer ${customer.token}`);
+    assert.equal(expiredReservation.status, 409);
+    assert.equal(
+      expiredReservation.body.error.code,
+      "BOOKING_NOT_CANCELLABLE",
+    );
+    assert.equal(expiredReservation.body.error.details.status, "expired");
   },
 );

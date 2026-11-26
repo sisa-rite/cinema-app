@@ -1,23 +1,21 @@
 import pool from "../db.js";
+import { deleteTicketsForBookings } from "../modules/bookings/bookings.db.js";
 
-export async function expireHolds() {
+export async function expireBookings() {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
     const { rows } = await client.query(
       `UPDATE bookings
        SET status = 'expired'
-       WHERE status = 'held'
-         AND hold_expires_at <= now()
+       WHERE (status = 'held' AND hold_expires_at <= now())
+          OR (status = 'reserved' AND payment_deadline <= now())
        RETURNING id`,
     );
     const bookingIds = rows.map(({ id }) => id);
 
     if (bookingIds.length > 0) {
-      await client.query(
-        "DELETE FROM tickets WHERE booking_id = ANY($1::integer[])",
-        [bookingIds],
-      );
+      await deleteTicketsForBookings(client, bookingIds);
     }
 
     await client.query("COMMIT");
@@ -37,9 +35,9 @@ export function startExpiryJob({ intervalMs = 60_000 } = {}) {
     if (running) return;
     running = true;
     try {
-      const expiredCount = await expireHolds();
+      const expiredCount = await expireBookings();
       if (expiredCount > 0) {
-        console.log(`Expired ${expiredCount} seat holds`);
+        console.log(`Expired ${expiredCount} holds and reservations`);
       }
     } catch (error) {
       console.error("Expiry job failed:", error);
