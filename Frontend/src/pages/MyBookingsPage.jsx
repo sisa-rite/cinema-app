@@ -1,6 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { cancelBooking } from "../api/bookings.js";
 import { getMyBookings } from "../api/me.js";
+import CancelReservationDialog from "../components/CancelReservationDialog.jsx";
 import Poster from "../components/Poster.jsx";
 import SeatChips from "../components/SeatChips.jsx";
 import StateMessage from "../components/StateMessage.jsx";
@@ -11,6 +13,7 @@ import {
   formatPrice,
   formatTime,
 } from "../utils/format.js";
+import { cancelErrorMessage } from "../utils/reservations.js";
 
 const PAGE_TITLE = "My bookings — Rio Theatres";
 const DEFAULT_TITLE = "Rio Theatres";
@@ -19,6 +22,11 @@ const GOLD_BUTTON_CLASSES =
   "rounded-full bg-rio-gold px-6 py-2.5 font-semibold text-rio-black transition-colors hover:bg-rio-gold-light";
 const TEXT_LINK_CLASSES =
   "rounded-sm text-sm font-semibold text-rio-gold underline-offset-4 hover:underline";
+const SMALL_GOLD_BUTTON_CLASSES =
+  "rounded-full bg-rio-gold px-4 py-1.5 text-sm font-semibold text-rio-black transition-colors hover:bg-rio-gold-light";
+const SMALL_CANCEL_BUTTON_CLASSES =
+  "rounded-full border border-red-300/70 px-4 py-1.5 text-sm font-semibold text-red-200 transition-colors hover:border-red-300 hover:bg-rio-red/30 disabled:cursor-not-allowed disabled:opacity-50";
+const ENDED_STATUSES = ["cancelled", "expired"];
 const STATUS_BADGES = {
   reserved: { label: "Reserved", classes: "border-rio-gold text-rio-gold-light" },
   paid: { label: "Paid", classes: "border-emerald-300 text-emerald-300" },
@@ -39,11 +47,38 @@ function StatusBadge({ status }) {
   );
 }
 
-function BookingCard({ booking, isPast }) {
+function BookingCard({ booking, showYear, onUpdated }) {
   const { reference, status, screening } = booking;
   const { movie, theatre, hall } = screening;
   const titleId = `booking-${reference}-title`;
   const hasTickets = booking.seats.length > 0 || booking.wheelchairSpaces > 0;
+  const checkoutPath = `/checkout/${encodeURIComponent(reference)}?city=${theatre.city}`;
+  const [cancelRequest, setCancelRequest] = useState(0);
+  const [cancelling, setCancelling] = useState(false);
+  const [message, setMessage] = useState(null);
+  const messageRef = useRef(null);
+
+  // The cancel button disappears after success, so focus moves to the message.
+  useEffect(() => {
+    if (message?.focus) messageRef.current.focus();
+  }, [message]);
+
+  async function cancel() {
+    setCancelling(true);
+    setMessage(null);
+    try {
+      const cancelled = await cancelBooking(reference);
+      onUpdated({ ...booking, ...cancelled });
+      setMessage({ text: "Reservation cancelled.", role: "status", focus: true });
+    } catch (error) {
+      if (error.code === "BOOKING_NOT_CANCELLABLE" && error.details?.status) {
+        onUpdated({ ...booking, status: error.details.status });
+      }
+      setMessage({ text: cancelErrorMessage(error), role: "alert", focus: false });
+    } finally {
+      setCancelling(false);
+    }
+  }
 
   return (
     <article
@@ -61,7 +96,7 @@ function BookingCard({ booking, isPast }) {
         </div>
         <p className="text-rio-gold-light">
           <time dateTime={screening.startsAt}>
-            {isPast ? formatDayLabelWithYear(screening.startsAt) : formatDayLabel(screening.startsAt)}
+            {showYear ? formatDayLabelWithYear(screening.startsAt) : formatDayLabel(screening.startsAt)}
             {" · "}
             {formatTime(screening.startsAt)}
           </time>
@@ -94,23 +129,50 @@ function BookingCard({ booking, isPast }) {
             </dd>
           </div>
         </dl>
-        {/* Reservation actions (Pay now, Cancel reservation) are added here by FR-016 and FR-018. */}
+        {status === "reserved" && (
+          <div className="flex flex-wrap items-center gap-3">
+            <Link to={checkoutPath} className={SMALL_GOLD_BUTTON_CLASSES}>
+              Pay now<span className="sr-only"> for {movie.title}, {reference}</span>
+            </Link>
+            <button
+              type="button"
+              onClick={() => setCancelRequest((count) => count + 1)}
+              disabled={cancelling}
+              className={SMALL_CANCEL_BUTTON_CLASSES}
+            >
+              {cancelling ? "Cancelling…" : "Cancel reservation"}
+              <span className="sr-only"> for {movie.title}, {reference}</span>
+            </button>
+          </div>
+        )}
         {status === "paid" && (
           <div className="flex flex-wrap items-center gap-4">
-            <Link
-              to={`/checkout/${encodeURIComponent(reference)}?city=${theatre.city}`}
-              className={TEXT_LINK_CLASSES}
-            >
+            <Link to={checkoutPath} className={TEXT_LINK_CLASSES}>
               View confirmation<span className="sr-only"> for {movie.title}, {reference}</span>
             </Link>
           </div>
         )}
+        {message && (
+          <p
+            ref={messageRef}
+            role={message.role}
+            tabIndex={-1}
+            className={`text-sm focus:outline-none ${
+              message.role === "alert" ? "text-red-300" : "text-rio-gold-light"
+            }`}
+          >
+            {message.text}
+          </p>
+        )}
       </div>
+      {status === "reserved" && (
+        <CancelReservationDialog openRequest={cancelRequest} onConfirm={cancel} />
+      )}
     </article>
   );
 }
 
-function BookingSection({ id, title, bookings, emptyText, isPast = false }) {
+function BookingSection({ id, title, bookings, emptyText, showYear = false, onUpdated }) {
   return (
     <section aria-labelledby={id} className="space-y-4">
       <h2 id={id} className="font-display text-2xl font-bold text-rio-gold-light">
@@ -122,13 +184,26 @@ function BookingSection({ id, title, bookings, emptyText, isPast = false }) {
         <ul className="space-y-4">
           {bookings.map((booking) => (
             <li key={booking.reference}>
-              <BookingCard booking={booking} isPast={isPast} />
+              <BookingCard booking={booking} showYear={showYear} onUpdated={onUpdated} />
             </li>
           ))}
         </ul>
       )}
     </section>
   );
+}
+
+// Cancelled and expired reservations have no tickets left, so they get their own section,
+// newest screening first. Grouped once per load: a booking cancelled on this page stays in place.
+function groupBookings({ upcoming, past }) {
+  const isEnded = (booking) => ENDED_STATUSES.includes(booking.status);
+  return {
+    upcoming: upcoming.filter((booking) => !isEnded(booking)),
+    past: past.filter((booking) => !isEnded(booking)),
+    cancelled: [...upcoming, ...past]
+      .filter(isEnded)
+      .sort((a, b) => Date.parse(b.screening.startsAt) - Date.parse(a.screening.startsAt)),
+  };
 }
 
 function MyBookingsPage() {
@@ -143,10 +218,24 @@ function MyBookingsPage() {
     };
   }, []);
 
+  // A cancelled reservation stays in its place in the list.
+  function updateBooking(updated) {
+    const replace = (bookings) =>
+      bookings.map((booking) => (booking.reference === updated.reference ? updated : booking));
+    setResult((current) => ({
+      ...current,
+      data: {
+        upcoming: replace(current.data.upcoming),
+        past: replace(current.data.past),
+        cancelled: replace(current.data.cancelled),
+      },
+    }));
+  }
+
   useEffect(() => {
     const controller = new AbortController();
     getMyBookings({ signal: controller.signal })
-      .then((data) => setResult({ attempt, data, error: null }))
+      .then((data) => setResult({ attempt, data: groupBookings(data), error: null }))
       .catch((error) => {
         if (!controller.signal.aborted) setResult({ attempt, data: null, error });
       });
@@ -181,7 +270,7 @@ function MyBookingsPage() {
         </button>
       </StateMessage>
     );
-  } else if (result.data.upcoming.length === 0 && result.data.past.length === 0) {
+  } else if (Object.values(result.data).every((bookings) => bookings.length === 0)) {
     content = (
       <StateMessage title="No bookings yet.">
         <Link to="/" className={GOLD_BUTTON_CLASSES}>
@@ -197,14 +286,25 @@ function MyBookingsPage() {
           title="Upcoming"
           bookings={result.data.upcoming}
           emptyText="No upcoming bookings."
+          onUpdated={updateBooking}
         />
         <BookingSection
           id="past-bookings"
           title="Past"
           bookings={result.data.past}
           emptyText="No past bookings."
-          isPast
+          showYear
+          onUpdated={updateBooking}
         />
+        {result.data.cancelled.length > 0 && (
+          <BookingSection
+            id="cancelled-bookings"
+            title="Cancelled"
+            bookings={result.data.cancelled}
+            showYear
+            onUpdated={updateBooking}
+          />
+        )}
       </div>
     );
   }

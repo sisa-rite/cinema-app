@@ -1,26 +1,60 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { getBooking, payBooking } from "../api/bookings.js";
+import { cancelBooking, getBooking, payBooking, reserveBooking } from "../api/bookings.js";
 import { ApiError } from "../api/client.js";
 import { getScreeningSeats } from "../api/screenings.js";
 import { useAuth } from "../auth/useAuth.js";
+import CancelReservationDialog from "../components/CancelReservationDialog.jsx";
 import Poster from "../components/Poster.jsx";
 import SeatChips from "../components/SeatChips.jsx";
 import StateMessage from "../components/StateMessage.jsx";
 import { loadBookingEmail, saveBookingEmail } from "../utils/bookingStorage.js";
 import { formatDateTime, formatDayLabel, formatPrice, formatTime } from "../utils/format.js";
+import { withRedirect } from "../utils/redirect.js";
+import {
+  cancelErrorMessage,
+  formatDeadline,
+  isReservationClosed,
+  reservationDeadline,
+} from "../utils/reservations.js";
 
 const PAGE_TITLE = "Checkout — Rio Theatres";
 const CONFIRMED_TITLE = "Booking confirmed — Rio Theatres";
 const DEFAULT_TITLE = "Rio Theatres";
 const WARNING_SECONDS = 2 * 60;
-// Pay errors that replace the whole checkout with another view.
-const PAGE_LEVEL_PAY_ERRORS = ["HOLD_EXPIRED", "SALES_CLOSED", "BOOKING_NOT_FOUND"];
+// Pay and reserve errors that replace the whole checkout with another view.
+const PAGE_LEVEL_ERRORS = [
+  "HOLD_EXPIRED",
+  "RESERVATION_EXPIRED",
+  "SALES_CLOSED",
+  "BOOKING_NOT_FOUND",
+  "BOOKING_ALREADY_PAID",
+];
 const CONTAINER_CLASSES = "mx-auto max-w-5xl px-4 py-8 sm:px-6";
 const TEXT_LINK_CLASSES =
   "rounded-sm font-semibold text-rio-gold underline-offset-4 hover:underline";
 const GOLD_BUTTON_CLASSES =
   "rounded-full bg-rio-gold px-6 py-2.5 font-semibold text-rio-black transition-colors hover:bg-rio-gold-light disabled:cursor-not-allowed disabled:opacity-50";
+const OUTLINE_BUTTON_CLASSES =
+  "rounded-full border border-rio-gold/60 px-6 py-2.5 font-semibold text-rio-gold transition-colors hover:border-rio-gold hover:bg-rio-gold/10 disabled:cursor-not-allowed disabled:opacity-50";
+const CANCEL_BUTTON_CLASSES =
+  "rounded-full border border-red-300/70 px-6 py-2.5 font-semibold text-red-200 transition-colors hover:border-red-300 hover:bg-rio-red/30 disabled:cursor-not-allowed disabled:opacity-50";
+
+// A cancelled booking, or a reservation (it has a payment deadline) that expired.
+function isEndedReservation(booking) {
+  return (
+    booking.status === "cancelled" || (booking.status === "expired" && Boolean(booking.paymentDeadline))
+  );
+}
+
+// These views replace the button that led to them, so focus moves to their heading.
+function useHeadingFocus() {
+  const headingRef = useRef(null);
+  useEffect(() => {
+    headingRef.current?.focus();
+  }, []);
+  return headingRef;
+}
 
 function formatRemaining(seconds) {
   const minutes = Math.floor(seconds / 60);
@@ -198,26 +232,13 @@ function BookingConfirmation({ booking, screening, moviesPath }) {
   );
 }
 
-function HeldBooking({ booking, screening, email, onPaid, onPayError }) {
-  const [now, setNow] = useState(Date.now);
-  const [startNow] = useState(now);
+// The no-refund checkbox gates only Pay; a reservation confirms it later, when it is paid.
+function PaySection({ reference, email, onPaid, onError }) {
   const [accepted, setAccepted] = useState(false);
   const [paying, setPaying] = useState(false);
   const [acceptError, setAcceptError] = useState("");
   const [payFailed, setPayFailed] = useState(false);
   const payingRef = useRef(false);
-  const expiresAt = Date.parse(booking.holdExpiresAt);
-  const remainingSeconds = Math.max(0, Math.ceil((expiresAt - now) / 1000));
-  const startSeconds =
-    booking.status === "held" ? Math.max(0, Math.ceil((expiresAt - startNow) / 1000)) : 0;
-  const expired = booking.status === "expired" || remainingSeconds === 0;
-  const warning = remainingSeconds <= WARNING_SECONDS;
-
-  useEffect(() => {
-    if (expired) return undefined;
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, [expired]);
 
   async function pay() {
     if (payingRef.current) return;
@@ -227,13 +248,13 @@ function HeldBooking({ booking, screening, email, onPaid, onPayError }) {
     setPayFailed(false);
 
     try {
-      onPaid(await payBooking(booking.reference, { email, acceptNoRefund: true }));
+      onPaid(await payBooking(reference, { email, acceptNoRefund: true }));
     } catch (error) {
       payingRef.current = false;
       setPaying(false);
       const fields = error.code === "VALIDATION_ERROR" ? error.details?.fields : null;
-      if (error instanceof ApiError && PAGE_LEVEL_PAY_ERRORS.includes(error.code)) {
-        onPayError(error);
+      if (error instanceof ApiError && PAGE_LEVEL_ERRORS.includes(error.code)) {
+        onError(error);
       } else if (fields) {
         setAcceptError(fields.acceptNoRefund ?? fields.email ?? error.message);
       } else {
@@ -241,6 +262,131 @@ function HeldBooking({ booking, screening, email, onPaid, onPayError }) {
       }
     }
   }
+
+  return (
+    <>
+      <p className="rounded-lg border border-rio-gold/40 bg-rio-gold/10 px-3 py-2 text-sm font-semibold text-rio-gold-light">
+        Paid tickets cannot be refunded or cancelled.
+      </p>
+      <div className="space-y-1">
+        <label className="flex items-start gap-2 text-sm text-white/75">
+          <input
+            type="checkbox"
+            required
+            checked={accepted}
+            onChange={(event) => setAccepted(event.target.checked)}
+            aria-invalid={acceptError ? true : undefined}
+            aria-describedby={acceptError ? "no-refund-error" : undefined}
+            className="mt-0.5 accent-rio-gold"
+          />
+          I understand that paid tickets cannot be refunded.
+        </label>
+        {acceptError && (
+          <p id="no-refund-error" className="text-sm text-red-300">
+            {acceptError}
+          </p>
+        )}
+      </div>
+      <button
+        type="button"
+        onClick={pay}
+        disabled={!accepted || paying}
+        className={`w-full ${GOLD_BUTTON_CLASSES}`}
+      >
+        {paying ? "Paying…" : "Pay"}
+      </button>
+      {payFailed && (
+        <p role="alert" className="text-sm text-red-300">
+          Payment failed. Please try again.
+        </p>
+      )}
+      <p className="text-center text-xs text-white/60">
+        This is a simulated payment — no card details are needed.
+      </p>
+    </>
+  );
+}
+
+function OrDivider() {
+  return (
+    <p className="flex items-center gap-3 text-xs font-semibold uppercase tracking-wider text-white/60">
+      <span aria-hidden="true" className="h-px flex-1 bg-rio-gold/20" />
+      or
+      <span aria-hidden="true" className="h-px flex-1 bg-rio-gold/20" />
+    </p>
+  );
+}
+
+function ReserveOption({ reference, startsAt, now, onReserved, onError }) {
+  const [reserving, setReserving] = useState(false);
+  const [reserveError, setReserveError] = useState("");
+  const reservingRef = useRef(false);
+  const hintId = useId();
+  const closed = isReservationClosed(startsAt, now);
+
+  async function reserve() {
+    if (reservingRef.current) return;
+    reservingRef.current = true;
+    setReserving(true);
+    setReserveError("");
+
+    try {
+      onReserved(await reserveBooking(reference));
+    } catch (error) {
+      reservingRef.current = false;
+      setReserving(false);
+      if (error instanceof ApiError && PAGE_LEVEL_ERRORS.includes(error.code)) {
+        onError(error);
+      } else if (error.code === "RESERVATION_CLOSED") {
+        setReserveError(error.message);
+      } else {
+        setReserveError("Reserving failed. Please try again.");
+      }
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <button
+        type="button"
+        onClick={reserve}
+        disabled={closed || reserving}
+        aria-describedby={hintId}
+        className={`w-full ${OUTLINE_BUTTON_CLASSES}`}
+      >
+        {reserving ? "Reserving…" : "Reserve and pay later"}
+      </button>
+      <p id={hintId} data-testid="reserve-hint" className="text-sm text-white/75">
+        {closed
+          ? "Reservations close 2 hours before the screening."
+          : `Pay at the latest 2 hours before the screening (by ${formatDeadline(reservationDeadline(startsAt))}).`}
+      </p>
+      {reserveError && (
+        <p role="alert" className="text-sm text-red-300">
+          {reserveError}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function HeldBooking({ booking, screening, email, onPaid, onReserved, onBookingError }) {
+  const { user, status } = useAuth();
+  const [now, setNow] = useState(Date.now);
+  const [startNow] = useState(now);
+  const expiresAt = Date.parse(booking.holdExpiresAt);
+  const remainingSeconds = Math.max(0, Math.ceil((expiresAt - now) / 1000));
+  const startSeconds =
+    booking.status === "held" ? Math.max(0, Math.ceil((expiresAt - startNow) / 1000)) : 0;
+  const expired = booking.status === "expired" || remainingSeconds === 0;
+  const warning = remainingSeconds <= WARNING_SECONDS;
+  const isCustomer = user?.role === "customer";
+
+  useEffect(() => {
+    if (expired) return undefined;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [expired]);
 
   return (
     <>
@@ -289,49 +435,163 @@ function HeldBooking({ booking, screening, email, onPaid, onPayError }) {
                   {formatPrice(booking.totalPrice)}
                 </span>
               </p>
-              <p className="rounded-lg border border-rio-gold/40 bg-rio-gold/10 px-3 py-2 text-sm font-semibold text-rio-gold-light">
-                Paid tickets cannot be refunded or cancelled.
-              </p>
-              <div className="space-y-1">
-                <label className="flex items-start gap-2 text-sm text-white/75">
-                  <input
-                    type="checkbox"
-                    required
-                    checked={accepted}
-                    onChange={(event) => setAccepted(event.target.checked)}
-                    aria-invalid={acceptError ? true : undefined}
-                    aria-describedby={acceptError ? "no-refund-error" : undefined}
-                    className="mt-0.5 accent-rio-gold"
-                  />
-                  I understand that paid tickets cannot be refunded.
-                </label>
-                {acceptError && (
-                  <p id="no-refund-error" className="text-sm text-red-300">
-                    {acceptError}
-                  </p>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={pay}
-                disabled={!accepted || paying}
-                className={`w-full ${GOLD_BUTTON_CLASSES}`}
-              >
-                {paying ? "Paying…" : "Pay"}
-              </button>
-              {payFailed && (
-                <p role="alert" className="text-sm text-red-300">
-                  Payment failed. Please try again.
+              <PaySection
+                reference={booking.reference}
+                email={email}
+                onPaid={onPaid}
+                onError={onBookingError}
+              />
+              {/* A guest hold cannot be reserved; after login the customer selects seats again. */}
+              {status !== "loading" && <OrDivider />}
+              {isCustomer && (
+                <ReserveOption
+                  reference={booking.reference}
+                  startsAt={screening.startsAt}
+                  now={now}
+                  onReserved={onReserved}
+                  onError={onBookingError}
+                />
+              )}
+              {!isCustomer && status !== "loading" && (
+                <p className="text-center text-sm text-white/75">
+                  Want to pay later?{" "}
+                  <Link
+                    to={withRedirect("/login", `/screenings/${booking.screeningId}`)}
+                    className={`underline ${TEXT_LINK_CLASSES}`}
+                  >
+                    Log in to reserve
+                  </Link>
                 </p>
               )}
-              <p className="text-center text-xs text-white/60">
-                This is a simulated payment — no card details are needed.
-              </p>
             </aside>
           </div>
         </div>
       )}
     </>
+  );
+}
+
+function ReservedBooking({ booking, screening, email, onPaid, onCancelled, onBookingError }) {
+  const headingRef = useHeadingFocus();
+  const [cancelRequest, setCancelRequest] = useState(0);
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState("");
+
+  async function cancel() {
+    setCancelling(true);
+    setCancelError("");
+    try {
+      onCancelled(await cancelBooking(booking.reference));
+    } catch (error) {
+      setCancelling(false);
+      // Paid or expired in the meantime: the reload shows the confirmation or the expired view.
+      if (error.code === "BOOKING_NOT_CANCELLABLE") onBookingError(error);
+      else setCancelError(cancelErrorMessage(error));
+    }
+  }
+
+  return (
+    <div data-testid="reservation-confirmation" className={CONTAINER_CLASSES}>
+      <h1
+        ref={headingRef}
+        tabIndex={-1}
+        className="font-display text-3xl font-bold text-rio-gold focus:outline-none sm:text-4xl"
+      >
+        Reservation confirmed
+      </h1>
+
+      {booking.paymentDeadline && (
+        <p
+          role="status"
+          className="mt-6 rounded-lg border border-rio-gold bg-rio-gold/10 px-4 py-3 font-semibold text-rio-gold-light"
+        >
+          Pay by{" "}
+          <time data-testid="payment-deadline" dateTime={booking.paymentDeadline}>
+            {formatDeadline(booking.paymentDeadline)}
+          </time>
+          , or the reservation expires and the seats are released.
+        </p>
+      )}
+      <Link to="/my-bookings" className={`mt-4 inline-block ${TEXT_LINK_CLASSES}`}>
+        Go to My bookings →
+      </Link>
+
+      <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start">
+        <ScreeningDetails screening={screening} booking={booking} />
+
+        <aside
+          aria-labelledby="reservation-summary-title"
+          className="space-y-4 rounded-2xl border border-rio-gold/30 bg-rio-surface p-6"
+        >
+          <h2 id="reservation-summary-title" className="text-sm font-semibold text-white/70">
+            Booking reference
+          </h2>
+          <CopyReference reference={booking.reference} />
+          <p className="flex items-baseline justify-between gap-4 border-t border-rio-gold/20 pt-4">
+            <span className="text-white/75">Total</span>
+            <span className="text-xl font-semibold text-rio-gold-light">
+              {formatPrice(booking.totalPrice)}
+            </span>
+          </p>
+          <section aria-labelledby="pay-now-title" className="space-y-4 border-t border-rio-gold/20 pt-4">
+            <h2 id="pay-now-title" className="font-display text-lg font-bold text-rio-gold">
+              Pay now
+            </h2>
+            <PaySection
+              reference={booking.reference}
+              email={email}
+              onPaid={onPaid}
+              onError={onBookingError}
+            />
+          </section>
+          <div className="space-y-2 border-t border-rio-gold/20 pt-4">
+            <button
+              type="button"
+              onClick={() => setCancelRequest((count) => count + 1)}
+              disabled={cancelling}
+              className={`w-full ${CANCEL_BUTTON_CLASSES}`}
+            >
+              {cancelling ? "Cancelling…" : "Cancel reservation"}
+            </button>
+            {cancelError && (
+              <p role="alert" className="text-sm text-red-300">
+                {cancelError}
+              </p>
+            )}
+          </div>
+        </aside>
+      </div>
+
+      <CancelReservationDialog openRequest={cancelRequest} onConfirm={cancel} />
+    </div>
+  );
+}
+
+function ReservationEnded({ booking, screening, moviesPath }) {
+  const headingRef = useHeadingFocus();
+  const cancelled = booking.status === "cancelled";
+  const moviePath = screening
+    ? `/movies/${screening.movie.id}?city=${screening.theatre.city}`
+    : moviesPath;
+
+  return (
+    <StateMessage
+      title={cancelled ? "Reservation cancelled." : "Reservation expired"}
+      headingAs="h1"
+      headingRef={headingRef}
+    >
+      <p role="status" className="text-white/75">
+        {cancelled
+          ? "The seats have been released for other customers."
+          : "The payment deadline has passed. Your reservation has expired."}
+      </p>
+      <Link to={moviePath} className={GOLD_BUTTON_CLASSES}>
+        {screening ? "Back to the movie" : "Back to movies"}
+      </Link>
+      <Link to="/my-bookings" className={TEXT_LINK_CLASSES}>
+        Go to My bookings →
+      </Link>
+    </StateMessage>
   );
 }
 
@@ -360,9 +620,11 @@ function Checkout({ reference }) {
     setResult((current) => ({ ...current, data: { ...current.data, booking } }));
   }
 
-  function handlePayError(error) {
-    if (error.code === "HOLD_EXPIRED") {
+  function handleBookingError(error) {
+    if (error.code === "HOLD_EXPIRED" || error.code === "RESERVATION_EXPIRED") {
       updateBooking({ ...result.data.booking, status: "expired" });
+    } else if (error.code === "BOOKING_ALREADY_PAID" || error.code === "BOOKING_NOT_CANCELLABLE") {
+      setAttempt((count) => count + 1);
     } else {
       setResult((current) => ({ ...current, error }));
     }
@@ -387,11 +649,13 @@ function Checkout({ reference }) {
 
     getBooking(reference, email, { signal })
       .then(async (booking) => {
-        // A paid booking is always confirmed, even if its screening was hidden later.
+        // A paid booking is always confirmed, and an ended reservation always explained,
+        // even if its screening was hidden later.
+        const screeningOptional = booking.status === "paid" || isEndedReservation(booking);
         const screening = await getScreeningSeats(booking.screeningId, { signal }).then(
           (data) => data.screening,
           (error) => {
-            if (booking.status !== "paid" || signal.aborted) throw error;
+            if (!screeningOptional || signal.aborted) throw error;
             return null;
           },
         );
@@ -492,13 +756,33 @@ function Checkout({ reference }) {
     );
   }
 
+  const { booking, screening } = result.data;
+
+  if (booking.status === "reserved") {
+    return (
+      <ReservedBooking
+        booking={booking}
+        screening={screening}
+        email={email}
+        onPaid={updateBooking}
+        onCancelled={updateBooking}
+        onBookingError={handleBookingError}
+      />
+    );
+  }
+
+  if (isEndedReservation(booking)) {
+    return <ReservationEnded booking={booking} screening={screening} moviesPath={moviesPath} />;
+  }
+
   return (
     <HeldBooking
-      booking={result.data.booking}
-      screening={result.data.screening}
+      booking={booking}
+      screening={screening}
       email={email}
       onPaid={updateBooking}
-      onPayError={handlePayError}
+      onReserved={updateBooking}
+      onBookingError={handleBookingError}
     />
   );
 }
