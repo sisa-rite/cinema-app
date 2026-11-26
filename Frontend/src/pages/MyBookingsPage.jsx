@@ -26,6 +26,7 @@ const SMALL_GOLD_BUTTON_CLASSES =
   "rounded-full bg-rio-gold px-4 py-1.5 text-sm font-semibold text-rio-black transition-colors hover:bg-rio-gold-light";
 const SMALL_CANCEL_BUTTON_CLASSES =
   "rounded-full border border-red-300/70 px-4 py-1.5 text-sm font-semibold text-red-200 transition-colors hover:border-red-300 hover:bg-rio-red/30 disabled:cursor-not-allowed disabled:opacity-50";
+const ENDED_STATUSES = ["cancelled", "expired"];
 const STATUS_BADGES = {
   reserved: { label: "Reserved", classes: "border-rio-gold text-rio-gold-light" },
   paid: { label: "Paid", classes: "border-emerald-300 text-emerald-300" },
@@ -46,7 +47,7 @@ function StatusBadge({ status }) {
   );
 }
 
-function BookingCard({ booking, isPast, onUpdated }) {
+function BookingCard({ booking, showYear, onUpdated }) {
   const { reference, status, screening } = booking;
   const { movie, theatre, hall } = screening;
   const titleId = `booking-${reference}-title`;
@@ -96,7 +97,7 @@ function BookingCard({ booking, isPast, onUpdated }) {
         </div>
         <p className="text-rio-gold-light">
           <time dateTime={screening.startsAt}>
-            {isPast ? formatDayLabelWithYear(screening.startsAt) : formatDayLabel(screening.startsAt)}
+            {showYear ? formatDayLabelWithYear(screening.startsAt) : formatDayLabel(screening.startsAt)}
             {" · "}
             {formatTime(screening.startsAt)}
           </time>
@@ -176,7 +177,7 @@ function BookingCard({ booking, isPast, onUpdated }) {
   );
 }
 
-function BookingSection({ id, title, bookings, emptyText, isPast = false, onUpdated }) {
+function BookingSection({ id, title, bookings, emptyText, showYear = false, onUpdated }) {
   return (
     <section aria-labelledby={id} className="space-y-4">
       <h2 id={id} className="font-display text-2xl font-bold text-rio-gold-light">
@@ -188,13 +189,26 @@ function BookingSection({ id, title, bookings, emptyText, isPast = false, onUpda
         <ul className="space-y-4">
           {bookings.map((booking) => (
             <li key={booking.reference}>
-              <BookingCard booking={booking} isPast={isPast} onUpdated={onUpdated} />
+              <BookingCard booking={booking} showYear={showYear} onUpdated={onUpdated} />
             </li>
           ))}
         </ul>
       )}
     </section>
   );
+}
+
+// Cancelled and expired reservations have no tickets left, so they get their own section,
+// newest screening first. Grouped once per load: a booking cancelled on this page stays in place.
+function groupBookings({ upcoming, past }) {
+  const isEnded = (booking) => ENDED_STATUSES.includes(booking.status);
+  return {
+    upcoming: upcoming.filter((booking) => !isEnded(booking)),
+    past: past.filter((booking) => !isEnded(booking)),
+    cancelled: [...upcoming, ...past]
+      .filter(isEnded)
+      .sort((a, b) => Date.parse(b.screening.startsAt) - Date.parse(a.screening.startsAt)),
+  };
 }
 
 function MyBookingsPage() {
@@ -215,14 +229,18 @@ function MyBookingsPage() {
       bookings.map((booking) => (booking.reference === updated.reference ? updated : booking));
     setResult((current) => ({
       ...current,
-      data: { upcoming: replace(current.data.upcoming), past: replace(current.data.past) },
+      data: {
+        upcoming: replace(current.data.upcoming),
+        past: replace(current.data.past),
+        cancelled: replace(current.data.cancelled),
+      },
     }));
   }
 
   useEffect(() => {
     const controller = new AbortController();
     getMyBookings({ signal: controller.signal })
-      .then((data) => setResult({ attempt, data, error: null }))
+      .then((data) => setResult({ attempt, data: groupBookings(data), error: null }))
       .catch((error) => {
         if (!controller.signal.aborted) setResult({ attempt, data: null, error });
       });
@@ -257,7 +275,7 @@ function MyBookingsPage() {
         </button>
       </StateMessage>
     );
-  } else if (result.data.upcoming.length === 0 && result.data.past.length === 0) {
+  } else if (Object.values(result.data).every((bookings) => bookings.length === 0)) {
     content = (
       <StateMessage title="No bookings yet.">
         <Link to="/" className={GOLD_BUTTON_CLASSES}>
@@ -280,9 +298,18 @@ function MyBookingsPage() {
           title="Past"
           bookings={result.data.past}
           emptyText="No past bookings."
-          isPast
+          showYear
           onUpdated={updateBooking}
         />
+        {result.data.cancelled.length > 0 && (
+          <BookingSection
+            id="cancelled-bookings"
+            title="Cancelled"
+            bookings={result.data.cancelled}
+            showYear
+            onUpdated={updateBooking}
+          />
+        )}
       </div>
     );
   }
