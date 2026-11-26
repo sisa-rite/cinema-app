@@ -484,7 +484,9 @@ function ReservedBooking({ booking, screening, email, onPaid, onCancelled, onBoo
       onCancelled(await cancelBooking(booking.reference));
     } catch (error) {
       setCancelling(false);
-      setCancelError(cancelErrorMessage(error));
+      // Paid or expired in the meantime: the reload shows the confirmation or the expired view.
+      if (error.code === "BOOKING_NOT_CANCELLABLE") onBookingError(error);
+      else setCancelError(cancelErrorMessage(error));
     }
   }
 
@@ -621,7 +623,7 @@ function Checkout({ reference }) {
   function handleBookingError(error) {
     if (error.code === "HOLD_EXPIRED" || error.code === "RESERVATION_EXPIRED") {
       updateBooking({ ...result.data.booking, status: "expired" });
-    } else if (error.code === "BOOKING_ALREADY_PAID") {
+    } else if (error.code === "BOOKING_ALREADY_PAID" || error.code === "BOOKING_NOT_CANCELLABLE") {
       setAttempt((count) => count + 1);
     } else {
       setResult((current) => ({ ...current, error }));

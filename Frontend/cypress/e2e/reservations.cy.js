@@ -90,6 +90,10 @@ function bookingCard(reference) {
   return cy.contains('[data-testid="booking-card"]', reference);
 }
 
+function authHeader(win) {
+  return { Authorization: `Bearer ${win.localStorage.getItem("rio-token")}` };
+}
+
 // Test cleanup: a reservation keeps its seat until the deadline, days away, so reruns would
 // otherwise fill the hall. Uses the logged-in customer's token.
 function cancelLeftoverReservation(apiOrigin, reference) {
@@ -97,7 +101,7 @@ function cancelLeftoverReservation(apiOrigin, reference) {
     cy.request({
       method: "POST",
       url: `${apiOrigin}/api/bookings/${reference}/cancel`,
-      headers: { Authorization: `Bearer ${win.localStorage.getItem("rio-token")}` },
+      headers: authHeader(win),
       body: {},
     }),
   );
@@ -295,6 +299,37 @@ describe("Reservations", () => {
         cy.contains("a", "Go to My bookings").should("have.attr", "href", "/my-bookings");
 
         cancelLeftoverReservation(apiOrigin, hold.reference);
+      });
+    });
+  });
+
+  it("shows the confirmation when a reservation paid elsewhere is cancelled", () => {
+    findReservableScreening().then(({ id, apiOrigin }) => {
+      signUpAndReserve("Two Tab Customer", id).then(({ hold }) => {
+        // Paid in another tab while this page still shows the reservation.
+        cy.window().then((win) =>
+          cy.request({
+            method: "POST",
+            url: `${apiOrigin}/api/bookings/${hold.reference}/pay`,
+            headers: authHeader(win),
+            body: { acceptNoRefund: true },
+          }),
+        );
+
+        cy.intercept("POST", "**/api/bookings/*/cancel").as("cancel");
+        cy.contains("button", "Cancel reservation").click();
+        cy.get('[data-testid="cancel-reservation-dialog"]')
+          .contains("button", "Cancel reservation")
+          .click();
+        cy.wait("@cancel").its("response.body.error").should("deep.include", {
+          code: "BOOKING_NOT_CANCELLABLE",
+          details: { status: "paid" },
+        });
+
+        cy.get('[data-testid="booking-confirmation"]').within(() => {
+          cy.contains("h1", "Your tickets are confirmed");
+          cy.get('[data-testid="booking-reference"]').should("have.text", hold.reference);
+        });
       });
     });
   });
