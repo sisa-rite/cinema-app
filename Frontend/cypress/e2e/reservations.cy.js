@@ -1,256 +1,293 @@
-// Reserve and pay later, cancel (FR-015, FR-016, FR-018). Holds and payments run against
-// the real backend; reserve and cancel are not merged yet, so their responses are stubbed
-// from the real hold.
+// Reserve and pay later, cancel (FR-015, FR-016, FR-018). Runs against the real backend and
+// database; only two states that cannot be created from the browser are stubbed (see below).
+import { requiresAgeCheck } from "../../src/utils/ageRating.js";
 import { formatDayLabel, formatTime } from "../../src/utils/format.js";
 import { signUp, uniqueEmail } from "../support/customerAccount.js";
 
 const MOVIE_LINKS = 'a[href^="/movies/"]';
-const SHOWTIME_LINKS = 'a[href^="/screenings/"]';
 const AVAILABLE_SEATS = '[data-testid="seat-map"] button[aria-label$=", available"]';
 const HOUR = 60 * 60 * 1000;
 
-function inHours(hours) {
-  return new Date(Date.now() + hours * HOUR).toISOString();
+// In development React fetches twice and aborts the first request, so cy.wait() on an
+// alias can yield a request without a response. Call this once the UI shows the data.
+function lastResponse(alias) {
+  return cy.get(`${alias}.all`).then((interceptions) => {
+    const answered = interceptions.filter((interception) => interception.response);
+    return answered[answered.length - 1];
+  });
+}
+
+function deadlineFor(startsAt) {
+  return new Date(Date.parse(startsAt) - 2 * HOUR).toISOString();
 }
 
 function formatDeadline(iso) {
   return `${formatDayLabel(iso)}, ${formatTime(iso)}`;
 }
 
-// Stays on purpose (not a TODO stub): every movie is unrated (FR-010 has its own spec), and
-// startsAt pins the screening start so the 2-hour reservation rule does not depend on the seed.
-function withScreening({ startsAt } = {}) {
-  cy.intercept("GET", "**/api/screenings/*/seats", (req) => {
-    // Without this the browser may revalidate and get an empty 304 instead of the seats.
+// The first Oulu screening that starts more than 3 hours from now, so the server still
+// accepts reservations (they close 2 hours before the start). Read from the movie response
+// the app loads anyway; its URL also gives the API origin for cleaning up.
+function findReservableScreening() {
+  cy.intercept("GET", "**/api/movies/*", (req) => {
+    // Without this the browser may revalidate and get an empty 304 instead of the movie.
     delete req.headers["if-none-match"];
-    req.on("before:response", (res) => {
-      res.body.screening.movie.ageRating = null;
-      if (startsAt) res.body.screening.startsAt = startsAt;
-    });
-  }).as("seats");
-}
-
-// Holds the first available seat of the first Oulu screening; yields the real hold.
-function holdSeat(guestEmail) {
-  cy.intercept("POST", "**/api/bookings").as("hold");
+  }).as("movie");
   cy.visit("/movies?city=oulu");
   cy.get(MOVIE_LINKS).first().click();
-  cy.get(SHOWTIME_LINKS).first().click();
-  cy.get(AVAILABLE_SEATS).first().click();
-  cy.contains("button", "Continue").click();
-  // A customer's e-mail field disappears once the account is loaded.
-  if (guestEmail) cy.get("#booking-email").type(guestEmail);
-  else cy.get("#booking-email").should("not.exist");
-  cy.contains("button", "Hold my seats").click();
-  cy.location("pathname").should("match", /^\/checkout\/RIO-/);
-  return cy.wait("@hold").its("response.body");
+  cy.get('a[href^="/screenings/"]').should("exist");
+  return lastResponse("@movie").then(({ request, response }) => {
+    const screening = response.body.screenings.find(
+      ({ startsAt }) => Date.parse(startsAt) > Date.now() + 3 * HOUR,
+    );
+    expect(screening, "an Oulu screening more than 3 hours away").to.exist;
+    return { id: screening.id, startsAt: screening.startsAt, apiOrigin: new URL(request.url).origin };
+  });
 }
 
-function signUpAndHold(name) {
+// Holds the first available seat (or the given one) through the UI; yields the real hold
+// and the seat's label, e.g. "Row 9, seat 91".
+function holdSeat(screeningId, { seat, guestEmail } = {}) {
+  cy.intercept("GET", "**/api/screenings/*/seats", (req) => {
+    delete req.headers["if-none-match"];
+  }).as("seats");
+  cy.intercept("POST", "**/api/bookings").as("hold");
+  cy.visit(`/screenings/${screeningId}`);
+
+  const seatButton = seat
+    ? cy.get(`[data-testid="seat-map"] button[aria-label="${seat}, available"]`)
+    : cy.get(AVAILABLE_SEATS).first();
+  return seatButton.invoke("attr", "aria-label").then((label) => {
+    const seatLabel = label.replace(/, available$/, "");
+    cy.get(`[aria-label="${label}"]`).click();
+    cy.contains("button", "Continue").click();
+    // The real age rating (FR-010 has its own spec): confirm the ID-check warning if shown.
+    lastResponse("@seats").its("response.body.screening.movie.ageRating").then((ageRating) => {
+      if (requiresAgeCheck(ageRating)) cy.contains("button", "I understand, continue").click();
+    });
+    // A customer's e-mail field disappears once the account is loaded.
+    if (guestEmail) cy.get("#booking-email").type(guestEmail);
+    else cy.get("#booking-email").should("not.exist");
+    cy.contains("button", "Hold my seats").click();
+    cy.location("pathname").should("match", /^\/checkout\/RIO-/);
+    return cy.wait("@hold").then(({ response }) => ({ hold: response.body, seatLabel }));
+  });
+}
+
+function signUpAndReserve(name, screeningId) {
   signUp(name, uniqueEmail());
   cy.location("pathname").should("eq", "/my-bookings");
-  return holdSeat();
+  return holdSeat(screeningId).then((held) => {
+    cy.intercept("POST", "**/api/bookings/*/reserve").as("reserve");
+    cy.contains("button", "Reserve and pay later").click();
+    cy.wait("@reserve").its("response.statusCode").should("eq", 200);
+    cy.contains("h1", "Reservation confirmed");
+    return cy.wrap(held);
+  });
 }
 
-function reservedFrom(hold, startsAt) {
-  return {
-    ...hold,
-    status: "reserved",
-    paymentDeadline: new Date(Date.parse(startsAt) - 2 * HOUR).toISOString(),
-    paidAt: null,
-  };
+function bookingCard(reference) {
+  return cy.contains('[data-testid="booking-card"]', reference);
 }
 
-// TODO: remove when FR-015/016 backend is merged
-function stubReserve(reserved) {
-  cy.intercept("POST", `**/api/bookings/${reserved.reference}/reserve`, {
-    statusCode: 200,
-    body: reserved,
-  }).as("reserve");
+// Test cleanup: a reservation keeps its seat until the deadline, days away, so reruns would
+// otherwise fill the hall. Uses the logged-in customer's token.
+function cancelLeftoverReservation(apiOrigin, reference) {
+  cy.window().then((win) =>
+    cy.request({
+      method: "POST",
+      url: `${apiOrigin}/api/bookings/${reference}/cancel`,
+      headers: { Authorization: `Bearer ${win.localStorage.getItem("rio-token")}` },
+      body: {},
+    }),
+  );
 }
 
-// TODO: remove when FR-015/016 backend is merged (the real GET then returns the reservation)
-function stubGetReservation(reserved) {
-  cy.intercept("GET", `**/api/bookings/${reserved.reference}*`, {
-    statusCode: 200,
-    body: reserved,
-  }).as("getReservation");
+// Stays on purpose: a screening starting in less than 2 hours cannot be created from the
+// browser, so the start in the seats response is moved. Reserve is never sent in that test.
+function stubScreeningStartingSoon() {
+  cy.intercept("GET", "**/api/screenings/*/seats", (req) => {
+    delete req.headers["if-none-match"];
+    req.on("before:response", (res) => {
+      res.body.screening.startsAt = new Date(Date.now() + 1.5 * HOUR).toISOString();
+    });
+  });
 }
 
-// TODO: remove when FR-015/016 backend is merged (My bookings then lists the real reservation)
-function stubMyReservation(reserved, screening) {
-  const item = {
-    reference: reserved.reference,
-    status: reserved.status,
-    paymentDeadline: reserved.paymentDeadline,
-    paidAt: null,
-    seats: reserved.seats,
-    wheelchairSpaces: reserved.wheelchairSpaces,
-    wheelchairDiscounts: reserved.wheelchairDiscounts,
-    totalPrice: reserved.totalPrice,
-    screening: {
-      id: screening.id,
-      startsAt: screening.startsAt,
-      movie: { id: screening.movie.id, title: screening.movie.title, posterUrl: screening.movie.posterUrl },
-      theatre: { name: screening.theatre.name, city: screening.theatre.city },
-      hall: { name: screening.hall.name },
+// Stays on purpose: the payment deadline cannot be moved from Cypress, so the server's
+// answer to paying a reservation after it is stubbed.
+function stubExpiredReservationPayment(reference) {
+  cy.intercept("POST", `**/api/bookings/${reference}/pay`, {
+    statusCode: 409,
+    body: {
+      error: {
+        code: "RESERVATION_EXPIRED",
+        message: "The reservation payment deadline has passed.",
+      },
     },
-  };
-  cy.intercept("GET", "**/api/me/bookings", {
-    statusCode: 200,
-    body: { upcoming: [item], past: [] },
-  }).as("myBookings");
-}
-
-// TODO: remove when FR-018 backend is merged
-function stubCancel(reserved) {
-  cy.intercept("POST", `**/api/bookings/${reserved.reference}/cancel`, {
-    statusCode: 200,
-    body: { ...reserved, status: "cancelled", seats: [], wheelchairSpaces: 0, wheelchairDiscounts: 0 },
-  }).as("cancel");
+  }).as("expiredPay");
 }
 
 describe("Reservations", () => {
-  it("reserves held seats without the no-refund confirmation and shows the deadline", () => {
+  it("reserves held seats without the no-refund confirmation and lists them as Reserved", () => {
     cy.viewport(375, 812);
-    const startsAt = inHours(72);
-    const deadline = new Date(Date.parse(startsAt) - 2 * HOUR).toISOString();
-    withScreening({ startsAt });
+    findReservableScreening().then(({ id, startsAt, apiOrigin }) => {
+      const deadline = deadlineFor(startsAt);
+      signUp("Reserving Customer", uniqueEmail());
+      cy.location("pathname").should("eq", "/my-bookings");
 
-    signUpAndHold("Reserving Customer").then((hold) => {
-      stubReserve(reservedFrom(hold, startsAt));
+      holdSeat(id).then(({ hold }) => {
+        cy.get('[data-testid="reserve-hint"]').should(
+          "have.text",
+          `Pay at the latest 2 hours before the screening (by ${formatDeadline(deadline)}).`,
+        );
+        cy.contains("button", /^Pay$/).should("be.disabled");
+        cy.intercept("POST", "**/api/bookings/*/reserve").as("reserve");
+        cy.contains("button", "Reserve and pay later").should("be.enabled").click();
+        cy.wait("@reserve").its("response.body.paymentDeadline").should("eq", deadline);
 
-      cy.get('[data-testid="reserve-hint"]').should(
-        "have.text",
-        `Pay at the latest 2 hours before the screening (by ${formatDeadline(deadline)}).`,
-      );
-      cy.contains("button", /^Pay$/).should("be.disabled");
-      cy.contains("button", "Reserve and pay later").should("be.enabled").click();
-      cy.wait("@reserve");
+        cy.get('[data-testid="reservation-confirmation"]').within(() => {
+          cy.contains("h1", "Reservation confirmed").should("be.focused");
+          cy.get('[data-testid="payment-deadline"]')
+            .should("have.text", formatDeadline(deadline))
+            .and("have.attr", "datetime", deadline);
+          cy.get('[data-testid="booking-reference"]').should("have.text", hold.reference);
+        });
+        cy.document().its("documentElement.scrollWidth").should("be.lte", 375);
 
-      cy.get('[data-testid="reservation-confirmation"]').within(() => {
-        cy.contains("h1", "Reservation confirmed").should("be.focused");
-        cy.get('[data-testid="payment-deadline"]')
-          .should("have.text", formatDeadline(deadline))
-          .and("have.attr", "datetime", deadline);
-        cy.get('[data-testid="booking-reference"]').should("have.text", hold.reference);
-        cy.contains("a", "Go to My bookings").should("have.attr", "href", "/my-bookings");
-        cy.contains("button", "Cancel reservation");
-      });
-      cy.document().its("documentElement.scrollWidth").should("be.lte", 375);
-    });
-  });
-
-  it("pays a reservation and shows the confirmation", () => {
-    const startsAt = inHours(72);
-    withScreening({ startsAt });
-
-    signUpAndHold("Paying Customer").then((hold) => {
-      const reserved = reservedFrom(hold, startsAt);
-      stubReserve(reserved);
-      cy.contains("button", "Reserve and pay later").click();
-      cy.contains("h1", "Reservation confirmed");
-
-      // Coming back later, e.g. from My bookings: the page loads the reservation again.
-      stubGetReservation(reserved);
-      cy.reload();
-      cy.wait("@getReservation");
-      cy.contains("h1", "Reservation confirmed");
-
-      // The real pay endpoint: the booking is still a valid hold on the server.
-      cy.intercept("POST", `**/api/bookings/${hold.reference}/pay`).as("pay");
-      cy.contains("button", /^Pay$/).should("be.disabled");
-      cy.contains("label", "I understand that paid tickets cannot be refunded.").click();
-      cy.contains("button", /^Pay$/).should("be.enabled").click();
-      cy.wait("@pay").its("response.statusCode").should("eq", 200);
-
-      cy.get('[data-testid="booking-confirmation"]').within(() => {
-        cy.contains("h1", "Your tickets are confirmed");
-        cy.get('[data-testid="booking-reference"]').should("have.text", hold.reference);
-      });
-    });
-  });
-
-  it("cancels a reservation from My bookings after confirming", () => {
-    const startsAt = inHours(72);
-    withScreening({ startsAt });
-
-    signUpAndHold("Cancelling Customer").then((hold) => {
-      const reserved = reservedFrom(hold, startsAt);
-      cy.get("@seats").its("response.body.screening").then((screening) => {
-        stubMyReservation(reserved, screening);
-      });
-      stubCancel(reserved);
-
-      cy.visit("/my-bookings");
-      // The list is requested only after the account has loaded.
-      cy.wait("@myBookings");
-      cy.get('[data-testid="booking-card"]')
-        .should("have.length", 1)
-        .within(() => {
+        cy.contains("a", "Go to My bookings").click();
+        bookingCard(hold.reference).within(() => {
           cy.get('[data-testid="booking-status"]').should("have.text", "Reserved");
-          cy.contains("a", "Pay now").should(
-            "have.attr",
-            "href",
-            `/checkout/${hold.reference}?city=oulu`,
-          );
-          cy.contains("button", "Cancel reservation").click();
+          cy.contains("Pay by");
+          cy.contains("a", "Pay now");
+          cy.contains("button", "Cancel reservation");
+        });
+        cy.document().its("documentElement.scrollWidth").should("be.lte", 375);
+
+        cancelLeftoverReservation(apiOrigin, hold.reference);
+      });
+    });
+  });
+
+  it("pays a reservation from My bookings", () => {
+    findReservableScreening().then(({ id }) => {
+      signUpAndReserve("Settling Customer", id).then(({ hold }) => {
+        cy.contains("a", "Go to My bookings").click();
+        bookingCard(hold.reference).contains("a", "Pay now").click();
+
+        cy.location("pathname").should("eq", `/checkout/${hold.reference}`);
+        cy.contains("h1", "Reservation confirmed");
+        cy.intercept("POST", `**/api/bookings/${hold.reference}/pay`).as("pay");
+        cy.contains("button", /^Pay$/).should("be.disabled");
+        cy.contains("label", "I understand that paid tickets cannot be refunded.").click();
+        cy.contains("button", /^Pay$/).should("be.enabled").click();
+        cy.wait("@pay").its("response.statusCode").should("eq", 200);
+
+        cy.get('[data-testid="booking-confirmation"]').within(() => {
+          cy.contains("h1", "Your tickets are confirmed");
+          cy.get('[data-testid="booking-reference"]').should("have.text", hold.reference);
         });
 
-      cy.get('[data-testid="cancel-reservation-dialog"]')
-        .should("be.visible")
-        .within(() => {
-          cy.contains("h2", "Cancel this reservation?");
-          cy.contains("The seats will be released.");
-          cy.contains("button", "Keep it").should("be.focused").click();
+        cy.visit("/my-bookings");
+        bookingCard(hold.reference).within(() => {
+          cy.get('[data-testid="booking-status"]').should("have.text", "Paid");
+          cy.contains("a", "View confirmation");
+          cy.contains("button", "Cancel reservation").should("not.exist");
         });
-      cy.get('[data-testid="cancel-reservation-dialog"]').should("not.be.visible");
-      cy.get("@cancel.all").should("have.length", 0);
-      cy.get('[data-testid="booking-status"]').should("have.text", "Reserved");
+      });
+    });
+  });
 
-      cy.get('[data-testid="booking-card"]').contains("button", "Cancel reservation").click();
-      cy.get('[data-testid="cancel-reservation-dialog"]')
-        .contains("button", "Cancel reservation")
-        .click();
-      cy.wait("@cancel");
+  it("cancels a reservation from My bookings and frees the seat", () => {
+    findReservableScreening().then(({ id }) => {
+      signUpAndReserve("Cancelling Customer", id).then(({ hold, seatLabel }) => {
+        cy.intercept("POST", "**/api/bookings/*/cancel").as("cancel");
+        cy.contains("a", "Go to My bookings").click();
+        bookingCard(hold.reference).contains("button", "Cancel reservation").click();
 
-      cy.get('[data-testid="booking-card"]').within(() => {
-        cy.get('[data-testid="booking-status"]').should("have.text", "Cancelled");
-        cy.contains('[role="status"]', "Reservation cancelled.").should("be.focused");
-        cy.contains("button", "Cancel reservation").should("not.exist");
-        cy.contains("a", "Pay now").should("not.exist");
+        cy.get('[data-testid="cancel-reservation-dialog"]')
+          .should("be.visible")
+          .within(() => {
+            cy.contains("h2", "Cancel this reservation?");
+            cy.contains("The seats will be released.");
+            cy.contains("button", "Keep it").should("be.focused").click();
+          });
+        cy.get('[data-testid="cancel-reservation-dialog"]').should("not.be.visible");
+        cy.get("@cancel.all").should("have.length", 0);
+        bookingCard(hold.reference)
+          .find('[data-testid="booking-status"]')
+          .should("have.text", "Reserved");
+
+        bookingCard(hold.reference).contains("button", "Cancel reservation").click();
+        cy.get('[data-testid="cancel-reservation-dialog"]')
+          .contains("button", "Cancel reservation")
+          .click();
+        cy.wait("@cancel").its("response.body").should((cancelled) => {
+          expect(cancelled.status).to.eq("cancelled");
+          expect(cancelled.seats).to.deep.eq([]);
+        });
+
+        bookingCard(hold.reference).within(() => {
+          cy.get('[data-testid="booking-status"]').should("have.text", "Cancelled");
+          cy.contains('[role="status"]', "Reservation cancelled.").should("be.focused");
+          cy.contains("button", "Cancel reservation").should("not.exist");
+          cy.contains("a", "Pay now").should("not.exist");
+        });
+
+        // The released seat can be held again right away.
+        holdSeat(id, { seat: seatLabel }).its("seatLabel").should("eq", seatLabel);
       });
     });
   });
 
   it("disables reserving less than 2 hours before the screening", () => {
-    withScreening({ startsAt: inHours(1.5) });
+    findReservableScreening().then(({ id }) => {
+      signUp("Late Customer", uniqueEmail());
+      cy.location("pathname").should("eq", "/my-bookings");
+      stubScreeningStartingSoon();
+      holdSeat(id).then(() => {
+        cy.contains("button", "Reserve and pay later").should("be.disabled");
+        cy.get('[data-testid="reserve-hint"]').should(
+          "have.text",
+          "Reservations close 2 hours before the screening.",
+        );
+        cy.contains("label", "I understand that paid tickets cannot be refunded.").click();
+        cy.contains("button", /^Pay$/).should("be.enabled");
+      });
+    });
+  });
 
-    signUpAndHold("Late Customer").then(() => {
-      cy.contains("button", "Reserve and pay later").should("be.disabled");
-      cy.get('[data-testid="reserve-hint"]').should(
-        "have.text",
-        "Reservations close 2 hours before the screening.",
-      );
-      cy.contains("label", "I understand that paid tickets cannot be refunded.").click();
-      cy.contains("button", /^Pay$/).should("be.enabled");
+  it("shows the expired view when the payment deadline has passed", () => {
+    findReservableScreening().then(({ id, apiOrigin }) => {
+      signUpAndReserve("Expiring Customer", id).then(({ hold }) => {
+        stubExpiredReservationPayment(hold.reference);
+        cy.contains("label", "I understand that paid tickets cannot be refunded.").click();
+        cy.contains("button", /^Pay$/).click();
+        cy.wait("@expiredPay");
+
+        cy.contains("h1", "Reservation expired").should("be.focused");
+        cy.contains('[role="status"]', "The payment deadline has passed. Your reservation has expired.");
+        cy.contains("a", "Go to My bookings").should("have.attr", "href", "/my-bookings");
+
+        cancelLeftoverReservation(apiOrigin, hold.reference);
+      });
     });
   });
 
   it("asks a guest to log in to reserve", () => {
-    withScreening();
-
-    holdSeat(`e2e-guest-${Date.now()}@test.rio`).then((hold) => {
-      cy.contains("button", "Reserve and pay later").should("not.exist");
-      cy.contains("p", "Want to pay later?")
-        .contains("a", "Log in to reserve")
-        .should(
-          "have.attr",
-          "href",
-          `/login?redirect=${encodeURIComponent(`/screenings/${hold.screeningId}`)}`,
-        )
-        .click();
-      cy.location("pathname").should("eq", "/login");
+    findReservableScreening().then(({ id }) => {
+      holdSeat(id, { guestEmail: uniqueEmail() }).then(({ hold }) => {
+        cy.contains("button", "Reserve and pay later").should("not.exist");
+        cy.contains("p", "Want to pay later?")
+          .contains("a", "Log in to reserve")
+          .should(
+            "have.attr",
+            "href",
+            `/login?redirect=${encodeURIComponent(`/screenings/${hold.screeningId}`)}`,
+          )
+          .click();
+        cy.location("pathname").should("eq", "/login");
+      });
     });
   });
 });
