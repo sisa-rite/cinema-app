@@ -6,28 +6,31 @@ const CANCEL_BUTTON_CLASSES =
 const SECONDARY_BUTTON_CLASSES =
   "rounded-full border border-rio-gold/60 px-6 py-2.5 font-semibold text-rio-gold transition-colors hover:border-rio-gold hover:bg-rio-gold/10";
 
-// Native modal like DeleteScreeningDialog; "Keep it" gets focus because cancelling cannot be undone.
-function CancelReservationDialog({ open, onConfirm, onCancel }) {
+// Native modal; "Keep it" gets focus because cancelling cannot be undone.
+// Each increment of openRequest opens the dialog, like AgeRatingDialog: an "open" boolean would
+// only reset in the asynchronous close event, so a quick second click could not reopen it.
+function CancelReservationDialog({ openRequest, onConfirm }) {
   const titleId = useId();
   const textId = useId();
   const dialogRef = useRef(null);
   const keepRef = useRef(null);
+  // Starts at the current value so a remount does not reopen an old request.
+  const handledRequest = useRef(openRequest);
 
   useEffect(() => {
     const dialog = dialogRef.current;
-    if (open && !dialog.open) {
+    if (openRequest === handledRequest.current) return;
+    handledRequest.current = openRequest;
+    if (!dialog.open) {
       dialog.returnValue = "";
       dialog.showModal();
       keepRef.current.focus();
-    } else if (!open && dialog.open) {
-      dialog.close();
     }
-  }, [open]);
+  }, [openRequest]);
 
   // Esc, backdrop click and "Keep it" all close without the confirm value.
   function handleClose() {
     if (dialogRef.current.returnValue === CONFIRM) onConfirm();
-    else onCancel();
   }
 
   function handleBackdropClick(event) {

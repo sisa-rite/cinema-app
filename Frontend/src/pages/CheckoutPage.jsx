@@ -473,12 +473,11 @@ function HeldBooking({ booking, screening, email, onPaid, onReserved, onBookingE
 
 function ReservedBooking({ booking, screening, email, onPaid, onCancelled, onBookingError }) {
   const headingRef = useHeadingFocus();
-  const [confirming, setConfirming] = useState(false);
+  const [cancelRequest, setCancelRequest] = useState(0);
   const [cancelling, setCancelling] = useState(false);
   const [cancelError, setCancelError] = useState("");
 
   async function cancel() {
-    setConfirming(false);
     setCancelling(true);
     setCancelError("");
     try {
@@ -546,7 +545,7 @@ function ReservedBooking({ booking, screening, email, onPaid, onCancelled, onBoo
           <div className="space-y-2 border-t border-rio-gold/20 pt-4">
             <button
               type="button"
-              onClick={() => setConfirming(true)}
+              onClick={() => setCancelRequest((count) => count + 1)}
               disabled={cancelling}
               className={`w-full ${CANCEL_BUTTON_CLASSES}`}
             >
@@ -561,11 +560,7 @@ function ReservedBooking({ booking, screening, email, onPaid, onCancelled, onBoo
         </aside>
       </div>
 
-      <CancelReservationDialog
-        open={confirming}
-        onConfirm={cancel}
-        onCancel={() => setConfirming(false)}
-      />
+      <CancelReservationDialog openRequest={cancelRequest} onConfirm={cancel} />
     </div>
   );
 }

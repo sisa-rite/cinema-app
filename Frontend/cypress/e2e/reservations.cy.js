@@ -218,6 +218,21 @@ describe("Reservations", () => {
           .find('[data-testid="booking-status"]')
           .should("have.text", "Reserved");
 
+        // "Keep it" and an immediate second click, before the dialog's asynchronous close
+        // event arrives, must still reopen it.
+        bookingCard(hold.reference).contains("button", "Cancel reservation").as("openDialog").click();
+        cy.get('[data-testid="cancel-reservation-dialog"]')
+          .contains("button", "Keep it")
+          .then(($keep) => {
+            cy.get("@openDialog").then(($open) => {
+              $keep[0].click();
+              $open[0].click();
+            });
+          });
+        cy.get('[data-testid="cancel-reservation-dialog"]').should("be.visible");
+        cy.get('[data-testid="cancel-reservation-dialog"]').contains("button", "Keep it").click();
+        cy.get("@cancel.all").should("have.length", 0);
+
         bookingCard(hold.reference).contains("button", "Cancel reservation").click();
         cy.get('[data-testid="cancel-reservation-dialog"]')
           .contains("button", "Cancel reservation")

@@ -53,7 +53,7 @@ function BookingCard({ booking, showYear, onUpdated }) {
   const titleId = `booking-${reference}-title`;
   const hasTickets = booking.seats.length > 0 || booking.wheelchairSpaces > 0;
   const checkoutPath = `/checkout/${encodeURIComponent(reference)}?city=${theatre.city}`;
-  const [confirming, setConfirming] = useState(false);
+  const [cancelRequest, setCancelRequest] = useState(0);
   const [cancelling, setCancelling] = useState(false);
   const [message, setMessage] = useState(null);
   const messageRef = useRef(null);
@@ -64,7 +64,6 @@ function BookingCard({ booking, showYear, onUpdated }) {
   }, [message]);
 
   async function cancel() {
-    setConfirming(false);
     setCancelling(true);
     setMessage(null);
     try {
@@ -137,7 +136,7 @@ function BookingCard({ booking, showYear, onUpdated }) {
             </Link>
             <button
               type="button"
-              onClick={() => setConfirming(true)}
+              onClick={() => setCancelRequest((count) => count + 1)}
               disabled={cancelling}
               className={SMALL_CANCEL_BUTTON_CLASSES}
             >
@@ -167,11 +166,7 @@ function BookingCard({ booking, showYear, onUpdated }) {
         )}
       </div>
       {status === "reserved" && (
-        <CancelReservationDialog
-          open={confirming}
-          onConfirm={cancel}
-          onCancel={() => setConfirming(false)}
-        />
+        <CancelReservationDialog openRequest={cancelRequest} onConfirm={cancel} />
       )}
     </article>
   );
