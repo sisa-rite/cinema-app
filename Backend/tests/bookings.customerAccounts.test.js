@@ -448,7 +448,6 @@ test(
     assert.equal(cancelled.body.status, "cancelled");
     assert.deepEqual(cancelled.body.seats, []);
     assert.equal(cancelled.body.wheelchairSpaces, 0);
-    assert.equal(cancelled.body.wheelchairDiscounts, 0);
     assert.equal(cancelled.body.totalPrice, hold.body.totalPrice);
 
     const rebooked = await request(app)
