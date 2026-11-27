@@ -1,6 +1,7 @@
 import { randomInt } from "node:crypto";
 import pool from "../../db.js";
 import {
+  countCustomerTickets,
   countTakenWheelchairSpaces,
   deleteTicketsForBookings,
   expireExpiredScreeningBookings,
@@ -12,13 +13,18 @@ import {
   insertBooking,
   insertTickets,
   isScreeningSalesClosed,
+  lockCustomer,
   lockBookingForCancellation,
   lockBookingForPayment,
   lockBookingForReservation,
   lockScreening,
   reserveBooking as updateBookingReservation,
 } from "./bookings.db.js";
-import { ticketPrices, totalPrice } from "./pricing.js";
+import {
+  applyLoyaltyDiscount,
+  ticketPrices,
+  totalPrice,
+} from "./pricing.js";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const REFERENCE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -166,6 +172,25 @@ async function insertBookingWithReference(
   }
 }
 
+function toBookingTicketResponse(tickets) {
+  return {
+    seats: tickets
+      .filter((ticket) => ticket.seat_id !== null)
+      .map((ticket) => ({
+        id: ticket.seat_id,
+        rowNumber: ticket.row_number,
+        seatNumber: ticket.seat_number,
+        ticketType: ticket.ticket_type,
+        price: Number(ticket.ticket_price),
+        discountNote: ticket.ticket_discount_note ?? null,
+      })),
+    wheelchairSpaces: tickets.filter((ticket) => ticket.is_wheelchair).length,
+    wheelchairDiscounts: tickets.filter(
+      (ticket) => ticket.is_wheelchair && ticket.ticket_discount_note != null,
+    ).length,
+  };
+}
+
 function toBookingResponse(booking, seats, includePaidAt = false) {
   const response = {
     id: booking.id,
@@ -179,16 +204,7 @@ function toBookingResponse(booking, seats, includePaidAt = false) {
     paymentDeadline: booking.payment_deadline
       ? new Date(booking.payment_deadline).toISOString()
       : null,
-    seats: seats
-      .filter((seat) => seat.seat_id !== null)
-      .map((seat) => ({
-        id: seat.seat_id,
-        rowNumber: seat.row_number,
-        seatNumber: seat.seat_number,
-        ticketType: seat.ticket_type,
-        price: Number(seat.ticket_price),
-      })),
-    wheelchairSpaces: seats.filter((seat) => seat.is_wheelchair).length,
+    ...toBookingTicketResponse(seats),
     totalPrice: Number(booking.total_price),
   };
   if (includePaidAt) {
@@ -200,17 +216,28 @@ function toBookingResponse(booking, seats, includePaidAt = false) {
 }
 
 // The last `childTickets` seats become child tickets; seats are interchangeable for pricing.
-function buildTickets(seatIds, childTickets, wheelchairSpaces, prices) {
+function buildTickets(seatIds, seats, childTickets, wheelchairSpaces, prices) {
   const firstChildIndex = seatIds.length - childTickets;
+  const seatsById = new Map(seats.map((seat) => [seat.id, seat]));
   const seatTickets = seatIds.map((seatId, index) => {
+    const seat = seatsById.get(seatId);
     const ticketType = index < firstChildIndex ? "adult" : "child";
-    return { seatId, isWheelchair: false, ticketType, price: prices[ticketType] };
+    return {
+      seatId,
+      isWheelchair: false,
+      ticketType,
+      rowNumber: seat.row_number,
+      seatNumber: seat.seat_number,
+      price: prices[ticketType],
+      discountNote: null,
+    };
   });
   const wheelchairTickets = Array.from({ length: wheelchairSpaces }, () => ({
     seatId: null,
     isWheelchair: true,
     ticketType: "adult",
     price: prices.adult,
+    discountNote: null,
   }));
   return [...seatTickets, ...wheelchairTickets];
 }
@@ -239,6 +266,7 @@ export async function createBooking(body, user) {
   try {
     await client.query("BEGIN");
     try {
+      if (userId !== null) await lockCustomer(client, userId);
       if (wheelchairSpaces > 0) await lockScreening(client, screeningId);
 
       const expiredBookingIds = await expireExpiredScreeningBookings(
@@ -280,12 +308,12 @@ export async function createBooking(body, user) {
         }
       }
 
-      const tickets = buildTickets(
-        seatIds,
-        childTickets,
-        wheelchairSpaces,
-        ticketPrices(screening.base_price, screening.is_premiere),
-      );
+      const prices = ticketPrices(screening.base_price, screening.is_premiere);
+      let tickets = buildTickets(seatIds, seats, childTickets, wheelchairSpaces, prices);
+      if (userId !== null) {
+        const ticketsSoFar = await countCustomerTickets(userId, client);
+        tickets = applyLoyaltyDiscount({ ticketsSoFar, tickets, prices });
+      }
       const booking = await insertBookingWithReference(
         client,
         screeningId,
@@ -566,8 +594,6 @@ export async function getMyBookings(userId) {
             ? new Date(row.payment_deadline).toISOString()
             : null,
           paidAt: row.paid_at ? new Date(row.paid_at).toISOString() : null,
-          seats: [],
-          wheelchairSpaces: 0,
           totalPrice: Number(row.total_price),
           screening: {
             id: row.screening_id,
@@ -581,24 +607,25 @@ export async function getMyBookings(userId) {
             hall: { name: row.hall_name },
           },
         },
+        tickets: [],
       };
       bookingsById.set(row.id, booking);
     }
-    if (row.is_wheelchair) booking.item.wheelchairSpaces += 1;
-    if (row.seat_id !== null) {
-      booking.item.seats.push({
-        id: row.seat_id,
-        rowNumber: row.row_number,
-        seatNumber: row.seat_number,
-        ticketType: row.ticket_type,
-        price: Number(row.ticket_price),
-      });
-    }
+    if (row.seat_id !== null || row.is_wheelchair) booking.tickets.push(row);
   }
 
   const result = { upcoming: [], past: [] };
   for (const booking of bookingsById.values()) {
+    Object.assign(booking.item, toBookingTicketResponse(booking.tickets));
     result[booking.upcoming ? "upcoming" : "past"].push(booking.item);
   }
   return result;
+}
+
+export async function getMyLoyalty(userId) {
+  const ticketsCounted = await countCustomerTickets(userId);
+  return {
+    ticketsCounted,
+    ticketsUntilDiscount: 10 - (ticketsCounted % 10),
+  };
 }

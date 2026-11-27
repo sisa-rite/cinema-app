@@ -108,6 +108,7 @@ function BookingCard({ booking, showYear, onUpdated }) {
           <SeatChips
             seats={booking.seats}
             wheelchairSpaces={booking.wheelchairSpaces}
+            wheelchairDiscounts={booking.wheelchairDiscounts}
             label={`Seats for ${movie.title}`}
           />
         )}

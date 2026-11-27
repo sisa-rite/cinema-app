@@ -78,6 +78,26 @@ export async function lockScreening(client, screeningId) {
   ]);
 }
 
+export async function lockCustomer(client, userId) {
+  await client.query("SELECT id FROM users WHERE id = $1 FOR UPDATE", [userId]);
+}
+
+export async function countCustomerTickets(userId, client = pool) {
+  const { rows } = await client.query(
+    `SELECT COUNT(ticket.id)::integer AS tickets_counted
+     FROM bookings AS booking
+     JOIN tickets AS ticket ON ticket.booking_id = booking.id
+     WHERE booking.user_id = $1
+       AND (
+         booking.status = 'paid'
+         OR (booking.status = 'held' AND booking.hold_expires_at > NOW())
+         OR (booking.status = 'reserved' AND booking.payment_deadline > NOW())
+       )`,
+    [userId],
+  );
+  return rows[0].tickets_counted;
+}
+
 export async function countTakenWheelchairSpaces(client, screeningId) {
   const { rows } = await client.query(
     `SELECT COUNT(*)::integer AS taken
@@ -119,8 +139,9 @@ export async function insertTickets(client, bookingId, screeningId, tickets) {
   for (const ticket of tickets) {
     await client.query(
       `INSERT INTO tickets
-         (booking_id, screening_id, seat_id, is_wheelchair, ticket_type, price)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
+         (booking_id, screening_id, seat_id, is_wheelchair, ticket_type, price,
+          discount_note)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
       [
         bookingId,
         screeningId,
@@ -128,6 +149,7 @@ export async function insertTickets(client, bookingId, screeningId, tickets) {
         ticket.isWheelchair,
         ticket.ticketType,
         ticket.price,
+        ticket.discountNote,
       ],
     );
   }
@@ -152,7 +174,7 @@ export async function findBookingByReferenceAndAccess(reference, email, userId) 
             booking.total_price,
             payment.paid_at,
             ticket.seat_id, ticket.is_wheelchair, ticket.ticket_type,
-            ticket.price AS ticket_price,
+            ticket.price AS ticket_price, ticket.discount_note AS ticket_discount_note,
             seat.row_number, seat.seat_number
      FROM bookings AS booking
      LEFT JOIN users AS account ON account.id = booking.user_id
@@ -274,7 +296,7 @@ export async function findBookingResponseById(client, bookingId) {
             booking.total_price,
             payment.paid_at,
             ticket.seat_id, ticket.is_wheelchair, ticket.ticket_type,
-            ticket.price AS ticket_price,
+            ticket.price AS ticket_price, ticket.discount_note AS ticket_discount_note,
             seat.row_number, seat.seat_number
      FROM bookings AS booking
      LEFT JOIN users AS account ON account.id = booking.user_id
@@ -330,6 +352,7 @@ export async function findBookingsForCustomer(userId) {
      SELECT selected.*,
             ticket.seat_id, ticket.is_wheelchair, ticket.ticket_type,
             ticket.price AS ticket_price,
+            ticket.discount_note AS ticket_discount_note,
             seat.row_number, seat.seat_number,
             selected.starts_at > NOW() AS is_upcoming
      FROM selected

@@ -6,6 +6,7 @@ export const CHILD_MAX_AGE = 12;
 
 const PREMIERE_PERCENT = 115;
 const CHILD_PERCENT = 50;
+export const LOYALTY_DISCOUNT_NOTE = "Every 10th ticket −50 %";
 
 // Integer cents keep 10 € × 115 % × 50 % at exactly 5.75 €.
 function toEuros(cents) {
@@ -23,4 +24,34 @@ export function ticketPrices(basePrice, isPremiere) {
 
 export function totalPrice(prices) {
   return toEuros(prices.reduce((cents, price) => cents + Math.round(price * 100), 0));
+}
+
+// `tickets` are priced with ticketPrices(); `prices` is that result for the screening.
+// The discounted price is the unrounded normal price × 50 %, rounded once: the child price.
+export function applyLoyaltyDiscount({ ticketsSoFar, tickets, prices }) {
+  const pricedTickets = tickets.map((ticket) => ({ ...ticket, discountNote: null }));
+  const hasDiscountPosition = tickets.some(
+    (_, index) => (ticketsSoFar + index + 1) % 10 === 0,
+  );
+  if (!hasDiscountPosition) return pricedTickets;
+
+  const firstAdultSeat = pricedTickets
+    .filter((ticket) => ticket.ticketType === "adult" && !ticket.isWheelchair)
+    .sort(
+      (left, right) =>
+        left.rowNumber - right.rowNumber ||
+        left.seatNumber - right.seatNumber,
+    )[0];
+  const discountedTicket =
+    firstAdultSeat ??
+    pricedTickets.find(
+      (ticket) => ticket.ticketType === "adult" && ticket.isWheelchair,
+    );
+
+  if (discountedTicket) {
+    discountedTicket.price = prices.child;
+    discountedTicket.discountNote = LOYALTY_DISCOUNT_NOTE;
+  }
+
+  return pricedTickets;
 }

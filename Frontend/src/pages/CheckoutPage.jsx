@@ -156,7 +156,11 @@ function ScreeningDetails({ screening, booking }) {
         <p className="text-sm text-white/75">
           {theatre.name} · {hall.name}
         </p>
-        <SeatChips seats={booking.seats} wheelchairSpaces={booking.wheelchairSpaces} />
+        <SeatChips
+          seats={booking.seats}
+          wheelchairSpaces={booking.wheelchairSpaces}
+          wheelchairDiscounts={booking.wheelchairDiscounts}
+        />
       </div>
     </section>
   );
@@ -197,7 +201,11 @@ function BookingConfirmation({ booking, screening, moviesPath }) {
         ) : (
           <div className="space-y-3">
             <p className="text-white/75">Screening details are not available.</p>
-            <SeatChips seats={booking.seats} wheelchairSpaces={booking.wheelchairSpaces} />
+            <SeatChips
+              seats={booking.seats}
+              wheelchairSpaces={booking.wheelchairSpaces}
+              wheelchairDiscounts={booking.wheelchairDiscounts}
+            />
           </div>
         )}
 
