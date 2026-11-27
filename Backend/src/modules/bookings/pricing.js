@@ -13,13 +13,6 @@ function toEuros(cents) {
   return Math.round(cents) / 100;
 }
 
-function halfPriceToEuros(price) {
-  const [euros, fraction = ""] = String(price).split(".");
-  const unscaledPrice = Number(`${euros}${fraction}`);
-  const cents = Math.round(unscaledPrice * 50 / 10 ** fraction.length);
-  return toEuros(cents);
-}
-
 export function ticketPrices(basePrice, isPremiere) {
   const baseCents = Math.round(Number(basePrice) * 100);
   const adultPercent = isPremiere ? PREMIERE_PERCENT : 100;
@@ -33,12 +26,10 @@ export function totalPrice(prices) {
   return toEuros(prices.reduce((cents, price) => cents + Math.round(price * 100), 0));
 }
 
-export function applyLoyaltyDiscount({ ticketsSoFar, tickets }) {
-  const pricedTickets = tickets.map((ticket) => ({
-    ...ticket,
-    price: toEuros(Math.round(ticket.price * 100)),
-    discountNote: null,
-  }));
+// `tickets` are priced with ticketPrices(); `prices` is that result for the screening.
+// The discounted price is the unrounded normal price × 50 %, rounded once: the child price.
+export function applyLoyaltyDiscount({ ticketsSoFar, tickets, prices }) {
+  const pricedTickets = tickets.map((ticket) => ({ ...ticket, discountNote: null }));
   const hasDiscountPosition = tickets.some(
     (_, index) => (ticketsSoFar + index + 1) % 10 === 0,
   );
@@ -58,8 +49,7 @@ export function applyLoyaltyDiscount({ ticketsSoFar, tickets }) {
     );
 
   if (discountedTicket) {
-    const ticketIndex = pricedTickets.indexOf(discountedTicket);
-    discountedTicket.price = halfPriceToEuros(tickets[ticketIndex].price);
+    discountedTicket.price = prices.child;
     discountedTicket.discountNote = LOYALTY_DISCOUNT_NOTE;
   }
 

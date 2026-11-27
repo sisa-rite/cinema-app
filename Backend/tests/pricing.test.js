@@ -24,6 +24,9 @@ test("the total adds prices without floating-point drift", () => {
   assert.equal(totalPrice([]), 0);
 });
 
+// Base 12.50 €, no premiere: adult 12.50 €, child 6.25 € (the contract's worked examples).
+const PRICES = ticketPrices(12.5, false);
+
 test("the 10th ticket discount follows the first worked example", () => {
   const tickets = Array.from({ length: 5 }, (_, index) => ({
     ticketType: "adult",
@@ -32,7 +35,7 @@ test("the 10th ticket discount follows the first worked example", () => {
     seatNumber: index + 1,
     price: 12.5,
   }));
-  const discounted = applyLoyaltyDiscount({ ticketsSoFar: 8, tickets });
+  const discounted = applyLoyaltyDiscount({ ticketsSoFar: 8, tickets, prices: PRICES });
 
   assert.equal(totalPrice(discounted.map(({ price }) => price)), 56.25);
   assert.equal(discounted[0].price, 6.25);
@@ -57,7 +60,7 @@ test("child tickets count toward the second worked example but are not discounte
       price: 6.25,
     })),
   ];
-  const discounted = applyLoyaltyDiscount({ ticketsSoFar: 0, tickets });
+  const discounted = applyLoyaltyDiscount({ ticketsSoFar: 0, tickets, prices: PRICES });
 
   assert.equal(totalPrice(discounted.map(({ price }) => price)), 106.25);
   assert.equal(discounted[0].discountNote, LOYALTY_DISCOUNT_NOTE);
@@ -67,6 +70,7 @@ test("child tickets count toward the second worked example but are not discounte
 test("a child-only 10th ticket loses its discount", () => {
   const [ticket] = applyLoyaltyDiscount({
     ticketsSoFar: 9,
+    prices: PRICES,
     tickets: [
       {
         ticketType: "child",
@@ -83,15 +87,18 @@ test("a child-only 10th ticket loses its discount", () => {
 });
 
 test("premiere discount rounds the unrounded adult price once", () => {
+  // 12.50 × 1.15 = 14.375 → adult 14.38; × 0.5 = 7.1875 → 7.19 (not half of 14.38).
+  const prices = ticketPrices(12.5, true);
   const [ticket] = applyLoyaltyDiscount({
     ticketsSoFar: 9,
+    prices,
     tickets: [
       {
         ticketType: "adult",
         isWheelchair: false,
         rowNumber: 1,
         seatNumber: 1,
-        price: 14.375,
+        price: prices.adult,
       },
     ],
   });
@@ -100,15 +107,18 @@ test("premiere discount rounds the unrounded adult price once", () => {
 });
 
 test("half-cent premiere prices round using integer cents", () => {
+  // 1.00 × 1.15 × 0.5 = 0.575 → 0.58.
+  const prices = ticketPrices(1, true);
   const [ticket] = applyLoyaltyDiscount({
     ticketsSoFar: 9,
+    prices,
     tickets: [
       {
         ticketType: "adult",
         isWheelchair: false,
         rowNumber: 1,
         seatNumber: 1,
-        price: 1.15,
+        price: prices.adult,
       },
     ],
   });
@@ -131,7 +141,7 @@ test("a wheelchair ticket receives the discount when there is no adult seat", ()
       price: 12.5,
     },
   ];
-  const discounted = applyLoyaltyDiscount({ ticketsSoFar: 9, tickets });
+  const discounted = applyLoyaltyDiscount({ ticketsSoFar: 9, tickets, prices: PRICES });
 
   assert.equal(discounted[1].price, 6.25);
   assert.equal(discounted[1].discountNote, LOYALTY_DISCOUNT_NOTE);
@@ -167,10 +177,34 @@ test("adult seats are selected by row and seat number before wheelchair spaces",
       price: 12.5,
     },
   ];
-  const discounted = applyLoyaltyDiscount({ ticketsSoFar: 9, tickets });
+  const discounted = applyLoyaltyDiscount({ ticketsSoFar: 9, tickets, prices: PRICES });
 
   assert.equal(discounted[0].discountNote, null);
   assert.equal(discounted[1].discountNote, null);
   assert.equal(discounted[2].discountNote, null);
   assert.equal(discounted[3].discountNote, LOYALTY_DISCOUNT_NOTE);
+});
+
+test("customers pay the same cent-rounded prices as guests, with or without the discount", () => {
+  for (let baseCents = 100; baseCents <= 3000; baseCents += 1) {
+    for (const isPremiere of [false, true]) {
+      const prices = ticketPrices(baseCents / 100, isPremiere);
+      const label = `base ${baseCents / 100} €, premiere ${isPremiere}`;
+      const tickets = [
+        { ticketType: "adult", isWheelchair: false, rowNumber: 1, seatNumber: 1, price: prices.adult },
+        { ticketType: "child", isWheelchair: false, rowNumber: 1, seatNumber: 2, price: prices.child },
+      ];
+
+      const normal = applyLoyaltyDiscount({ ticketsSoFar: 0, tickets, prices });
+      assert.deepEqual(
+        normal.map(({ price }) => price),
+        [prices.adult, prices.child],
+        label,
+      );
+
+      const [discounted] = applyLoyaltyDiscount({ ticketsSoFar: 9, tickets, prices });
+      assert.equal(discounted.discountNote, LOYALTY_DISCOUNT_NOTE, label);
+      assert.equal(discounted.price, prices.child, label);
+    }
+  }
 });

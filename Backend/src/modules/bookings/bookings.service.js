@@ -215,16 +215,6 @@ function toBookingResponse(booking, seats, includePaidAt = false) {
   return response;
 }
 
-function unroundedTicketPrices(basePrice, isPremiere) {
-  const baseCents = Math.round(Number(basePrice) * 100);
-  const adultPriceCents =
-    (baseCents * (isPremiere ? 115 : 100)) / 100;
-  return {
-    adult: adultPriceCents / 100,
-    child: adultPriceCents / 200,
-  };
-}
-
 // The last `childTickets` seats become child tickets; seats are interchangeable for pricing.
 function buildTickets(seatIds, seats, childTickets, wheelchairSpaces, prices) {
   const firstChildIndex = seatIds.length - childTickets;
@@ -318,25 +308,11 @@ export async function createBooking(body, user) {
         }
       }
 
-      let tickets = buildTickets(
-        seatIds,
-        seats,
-        childTickets,
-        wheelchairSpaces,
-        unroundedTicketPrices(screening.base_price, screening.is_premiere),
-      );
+      const prices = ticketPrices(screening.base_price, screening.is_premiere);
+      let tickets = buildTickets(seatIds, seats, childTickets, wheelchairSpaces, prices);
       if (userId !== null) {
         const ticketsSoFar = await countCustomerTickets(userId, client);
-        tickets = applyLoyaltyDiscount({
-          ticketsSoFar,
-          tickets,
-        });
-      } else {
-        const prices = ticketPrices(
-          screening.base_price,
-          screening.is_premiere,
-        );
-        for (const ticket of tickets) ticket.price = prices[ticket.ticketType];
+        tickets = applyLoyaltyDiscount({ ticketsSoFar, tickets, prices });
       }
       const booking = await insertBookingWithReference(
         client,
