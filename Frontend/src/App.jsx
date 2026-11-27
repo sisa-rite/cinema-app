@@ -9,6 +9,9 @@ import MovieDetailPage from "./pages/MovieDetailPage.jsx";
 import ScreeningPage from "./pages/ScreeningPage.jsx";
 import CheckoutPage from "./pages/CheckoutPage.jsx";
 import StaffLoginPage from "./pages/StaffLoginPage.jsx";
+import LoginPage from "./pages/LoginPage.jsx";
+import SignUpPage from "./pages/SignUpPage.jsx";
+import MyBookingsPage from "./pages/MyBookingsPage.jsx";
 import CashierPage from "./pages/CashierPage.jsx";
 import AdminMoviesPage from "./pages/AdminMoviesPage.jsx";
 import AdminMovieFormPage from "./pages/AdminMovieFormPage.jsx";
@@ -32,17 +35,27 @@ const router = createBrowserRouter([
           { path: "/movies/:id", element: <MovieDetailPage /> },
           { path: "/screenings/:id", element: <ScreeningPage /> },
           { path: "/checkout/:reference", element: <CheckoutPage /> },
-          { path: "/staff/login", element: <StaffLoginPage /> },
+          { path: "/login", element: <LoginPage /> },
+          { path: "/signup", element: <SignUpPage /> },
           {
-            path: "/cashier",
+            path: "/my-bookings",
             element: (
-              <RequireRole roles={["cashier", "admin"]}>
-                <CashierPage />
+              <RequireRole roles={["customer"]} loginPath="/login">
+                <MyBookingsPage />
               </RequireRole>
             ),
           },
+          { path: "/staff/login", element: <StaffLoginPage /> },
           { path: "*", element: <NotFoundPage /> },
         ],
+      },
+      {
+        path: "/cashier",
+        element: (
+          <RequireRole roles={["cashier", "admin"]}>
+            <CashierPage />
+          </RequireRole>
+        ),
       },
       {
         path: "/admin",

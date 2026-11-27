@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import logo from "../assets/rio-logo.webp";
+import AccountMenu from "../components/AccountMenu.jsx";
 import { THEATRES } from "../config/theatres.js";
 
 function HomePage() {
@@ -9,6 +10,10 @@ function HomePage() {
         aria-hidden="true"
         className="absolute inset-0 -z-10 bg-[radial-gradient(ellipse_at_top,rgb(142_0_11/0.3),transparent_60%),radial-gradient(ellipse_at_center,transparent_55%,rgb(0_0_0/0.8))]"
       />
+
+      <div className="absolute right-4 top-4 z-10 sm:right-6 sm:top-6">
+        <AccountMenu />
+      </div>
 
       <h1 className="w-full max-w-xl">
         <span className="rio-logo">

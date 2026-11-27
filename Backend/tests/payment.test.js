@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import request from "supertest";
 import app from "../src/app.js";
 import pool from "../src/db.js";
-import { expireHolds } from "../src/jobs/expiry.js";
+import { expireBookings } from "../src/jobs/expiry.js";
 
 const hasDatabase = Boolean(process.env.DATABASE_URL);
 const createdReferences = [];
@@ -313,7 +313,7 @@ test(
        WHERE reference = $1`,
       [hold.body.reference],
     );
-    await expireHolds();
+    await expireBookings();
 
     const { rows: bookingRows } = await pool.query(
       "SELECT status FROM bookings WHERE reference = $1",

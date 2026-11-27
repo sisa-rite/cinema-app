@@ -5,10 +5,16 @@ import assert from "node:assert/strict";
 import request from "supertest";
 import app from "../src/app.js";
 import pool from "../src/db.js";
-import { expireHolds } from "../src/jobs/expiry.js";
+import { expireBookings } from "../src/jobs/expiry.js";
 
 const hasDatabase = Boolean(process.env.DATABASE_URL);
-const references = ["expired", "active", "paid"].map(
+const references = [
+  "expired-hold",
+  "active-hold",
+  "paid",
+  "expired-reservation",
+  "active-reservation",
+].map(
   (label) => `FR005-${label}-${randomUUID()}`,
 );
 
@@ -49,7 +55,7 @@ test(
                  WHERE ticket.screening_id = screening.id
                    AND ticket.seat_id = seat.id
                )
-           ) >= 3
+           ) >= 5
          ORDER BY screening.starts_at
          LIMIT 1
        )
@@ -65,28 +71,38 @@ test(
              AND ticket.seat_id = seat.id
          )
        ORDER BY seat.pos_y, seat.pos_x
-       LIMIT 3`,
+       LIMIT 5`,
     );
     assert.equal(
       seats.length,
-      3,
-      "expected three free seats in an upcoming screening",
+      5,
+      "expected five free seats in an upcoming screening",
     );
 
     const screeningId = seats[0].screening_id;
     const bookingIds = [];
-    const statuses = ["held", "held", "paid"];
+    const statuses = ["held", "held", "paid", "reserved", "reserved"];
     const expirations = [
       new Date(Date.now() - 60_000),
       new Date(Date.now() + 10 * 60_000),
       new Date(Date.now() - 60_000),
+      null,
+      null,
+    ];
+    const deadlines = [
+      null,
+      null,
+      null,
+      new Date(Date.now() - 60_000),
+      new Date(Date.now() + 10 * 60_000),
     ];
 
     for (let index = 0; index < references.length; index += 1) {
       const { rows } = await pool.query(
         `INSERT INTO bookings
-           (reference, guest_email, screening_id, status, hold_expires_at, total_price)
-         VALUES ($1, $2, $3, $4, $5, $6)
+           (reference, guest_email, screening_id, status, hold_expires_at,
+            payment_deadline, total_price)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
          RETURNING id`,
         [
           references[index],
@@ -94,6 +110,7 @@ test(
           screeningId,
           statuses[index],
           expirations[index],
+          deadlines[index],
           1,
         ],
       );
@@ -107,8 +124,8 @@ test(
       );
     }
 
-    const expiredCount = await expireHolds();
-    assert.ok(expiredCount >= 1);
+    const expiredCount = await expireBookings();
+    assert.ok(expiredCount >= 2);
 
     const { rows: bookingStates } = await pool.query(
       `SELECT id, status
@@ -119,7 +136,7 @@ test(
     );
     assert.deepEqual(
       bookingStates.map(({ status }) => status),
-      ["expired", "held", "paid"],
+      ["expired", "held", "paid", "expired", "reserved"],
     );
 
     const { rows: ticketStates } = await pool.query(
@@ -131,7 +148,9 @@ test(
     );
     assert.deepEqual(
       ticketStates.map(({ booking_id }) => booking_id),
-      bookingIds.slice(1).sort((a, b) => a - b),
+      bookingIds
+        .filter((_, index) => index === 1 || index === 2 || index === 4)
+        .sort((a, b) => a - b),
     );
 
     const response = await request(app).get(
@@ -147,7 +166,7 @@ test(
       "held",
     );
 
-    await expireHolds();
+    await expireBookings();
     const { rows: unchangedBookings } = await pool.query(
       `SELECT id, status
        FROM bookings

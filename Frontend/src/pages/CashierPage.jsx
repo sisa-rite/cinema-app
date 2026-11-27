@@ -1,20 +1,19 @@
 import { useAuth } from "../auth/useAuth.js";
+import StaffHeader from "../components/StaffHeader.jsx";
 import StateMessage from "../components/StateMessage.jsx";
 
 function CashierPage() {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
 
   return (
-    <StateMessage title="Cashier view — coming soon" headingAs="h1">
-      <p className="text-white/75">Logged in as {user.name}</p>
-      <button
-        type="button"
-        onClick={logout}
-        className="rounded-sm font-semibold text-rio-gold underline-offset-4 hover:underline"
-      >
-        Log out
-      </button>
-    </StateMessage>
+    <div className="flex min-h-dvh flex-col">
+      <StaffHeader homePath="/cashier" title="Rio Theatres — Cashier" />
+      <main className="flex-1">
+        <StateMessage title="Cashier view — coming soon" headingAs="h1">
+          <p className="text-white/75">Logged in as {user.name}</p>
+        </StateMessage>
+      </main>
+    </div>
   );
 }
 

@@ -1,20 +1,30 @@
 import { randomInt } from "node:crypto";
 import pool from "../../db.js";
 import {
+  countCustomerTickets,
   countTakenWheelchairSpaces,
   deleteTicketsForBookings,
-  expireScreeningHolds,
+  expireExpiredScreeningBookings,
+  findBookingsForCustomer,
   findBookingResponseById,
-  findBookingByReferenceAndEmail,
+  findBookingByReferenceAndAccess,
   findPublishedScreening,
   findRequestedSeats,
   insertBooking,
   insertTickets,
   isScreeningSalesClosed,
+  lockCustomer,
+  lockBookingForCancellation,
   lockBookingForPayment,
+  lockBookingForReservation,
   lockScreening,
+  reserveBooking as updateBookingReservation,
 } from "./bookings.db.js";
-import { ticketPrices, totalPrice } from "./pricing.js";
+import {
+  applyLoyaltyDiscount,
+  ticketPrices,
+  totalPrice,
+} from "./pricing.js";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const REFERENCE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -41,7 +51,7 @@ function validationError(fields) {
   );
 }
 
-function validateBookingBody(body) {
+function validateBookingBody(body, isCustomer) {
   if (!body || typeof body !== "object" || Array.isArray(body)) body = {};
 
   const fields = {};
@@ -77,12 +87,14 @@ function validateBookingBody(body) {
   ) {
     fields.childTickets = "Child tickets must be a whole number up to the number of seats";
   }
-  if (
-    typeof body.email !== "string" ||
-    body.email.length > 254 ||
-    !EMAIL_PATTERN.test(body.email)
-  ) {
-    fields.email = "Invalid e-mail address";
+  if (!isCustomer) {
+    if (
+      typeof body.email !== "string" ||
+      body.email.length > 254 ||
+      !EMAIL_PATTERN.test(body.email)
+    ) {
+      fields.email = "Invalid e-mail address";
+    }
   }
   if (Object.keys(fields).length > 0) throw validationError(fields);
 
@@ -91,18 +103,21 @@ function validateBookingBody(body) {
     seatIds: body.seatIds,
     childTickets,
     wheelchairSpaces,
-    email: body.email.toLowerCase(),
+    email: isCustomer ? null : body.email.toLowerCase(),
   };
 }
 
-function validatePaymentBody(body) {
+function validatePaymentBody(body, canOmitEmail) {
   if (!body || typeof body !== "object" || Array.isArray(body)) body = {};
 
   const fields = {};
-  if (
-    typeof body.email !== "string" ||
-    body.email.length > 254 ||
-    !EMAIL_PATTERN.test(body.email)
+  if (body.email === undefined && !canOmitEmail) {
+    fields.email = "Invalid e-mail address";
+  } else if (
+    body.email !== undefined &&
+    (typeof body.email !== "string" ||
+      body.email.length > 254 ||
+      !EMAIL_PATTERN.test(body.email))
   ) {
     fields.email = "Invalid e-mail address";
   }
@@ -111,7 +126,7 @@ function validatePaymentBody(body) {
   }
   if (Object.keys(fields).length > 0) throw validationError(fields);
 
-  return { email: body.email.toLowerCase() };
+  return { email: body.email?.toLowerCase() ?? null };
 }
 
 function generateReference() {
@@ -125,6 +140,7 @@ function generateReference() {
 async function insertBookingWithReference(
   client,
   screeningId,
+  userId,
   email,
   totalPrice,
 ) {
@@ -135,6 +151,7 @@ async function insertBookingWithReference(
       const booking = await insertBooking(
         client,
         screeningId,
+        userId,
         email,
         totalPrice,
         generateReference(),
@@ -155,26 +172,39 @@ async function insertBookingWithReference(
   }
 }
 
+function toBookingTicketResponse(tickets) {
+  return {
+    seats: tickets
+      .filter((ticket) => ticket.seat_id !== null)
+      .map((ticket) => ({
+        id: ticket.seat_id,
+        rowNumber: ticket.row_number,
+        seatNumber: ticket.seat_number,
+        ticketType: ticket.ticket_type,
+        price: Number(ticket.ticket_price),
+        discountNote: ticket.ticket_discount_note ?? null,
+      })),
+    wheelchairSpaces: tickets.filter((ticket) => ticket.is_wheelchair).length,
+    wheelchairDiscounts: tickets.filter(
+      (ticket) => ticket.is_wheelchair && ticket.ticket_discount_note != null,
+    ).length,
+  };
+}
+
 function toBookingResponse(booking, seats, includePaidAt = false) {
   const response = {
     id: booking.id,
     reference: booking.reference,
     status: booking.response_status ?? booking.status,
     screeningId: booking.screening_id,
-    email: booking.guest_email,
+    email: booking.response_email ?? booking.user_email ?? booking.guest_email,
     holdExpiresAt: booking.hold_expires_at
       ? new Date(booking.hold_expires_at).toISOString()
       : null,
-    seats: seats
-      .filter((seat) => seat.seat_id !== null)
-      .map((seat) => ({
-        id: seat.seat_id,
-        rowNumber: seat.row_number,
-        seatNumber: seat.seat_number,
-        ticketType: seat.ticket_type,
-        price: Number(seat.ticket_price),
-      })),
-    wheelchairSpaces: seats.filter((seat) => seat.is_wheelchair).length,
+    paymentDeadline: booking.payment_deadline
+      ? new Date(booking.payment_deadline).toISOString()
+      : null,
+    ...toBookingTicketResponse(seats),
     totalPrice: Number(booking.total_price),
   };
   if (includePaidAt) {
@@ -186,24 +216,36 @@ function toBookingResponse(booking, seats, includePaidAt = false) {
 }
 
 // The last `childTickets` seats become child tickets; seats are interchangeable for pricing.
-function buildTickets(seatIds, childTickets, wheelchairSpaces, prices) {
+function buildTickets(seatIds, seats, childTickets, wheelchairSpaces, prices) {
   const firstChildIndex = seatIds.length - childTickets;
+  const seatsById = new Map(seats.map((seat) => [seat.id, seat]));
   const seatTickets = seatIds.map((seatId, index) => {
+    const seat = seatsById.get(seatId);
     const ticketType = index < firstChildIndex ? "adult" : "child";
-    return { seatId, isWheelchair: false, ticketType, price: prices[ticketType] };
+    return {
+      seatId,
+      isWheelchair: false,
+      ticketType,
+      rowNumber: seat.row_number,
+      seatNumber: seat.seat_number,
+      price: prices[ticketType],
+      discountNote: null,
+    };
   });
   const wheelchairTickets = Array.from({ length: wheelchairSpaces }, () => ({
     seatId: null,
     isWheelchair: true,
     ticketType: "adult",
     price: prices.adult,
+    discountNote: null,
   }));
   return [...seatTickets, ...wheelchairTickets];
 }
 
-export async function createBooking(body) {
+export async function createBooking(body, user) {
+  const userId = user?.role === "customer" ? user.id : null;
   const { screeningId, seatIds, childTickets, wheelchairSpaces, email } =
-    validateBookingBody(body);
+    validateBookingBody(body, userId !== null);
   const screening = await findPublishedScreening(screeningId);
   if (!screening) {
     throw new BookingsServiceError(
@@ -224,9 +266,13 @@ export async function createBooking(body) {
   try {
     await client.query("BEGIN");
     try {
+      if (userId !== null) await lockCustomer(client, userId);
       if (wheelchairSpaces > 0) await lockScreening(client, screeningId);
 
-      const expiredBookingIds = await expireScreeningHolds(client, screeningId);
+      const expiredBookingIds = await expireExpiredScreeningBookings(
+        client,
+        screeningId,
+      );
       if (expiredBookingIds.length > 0) {
         await deleteTicketsForBookings(client, expiredBookingIds);
       }
@@ -262,15 +308,16 @@ export async function createBooking(body) {
         }
       }
 
-      const tickets = buildTickets(
-        seatIds,
-        childTickets,
-        wheelchairSpaces,
-        ticketPrices(screening.base_price, screening.is_premiere),
-      );
+      const prices = ticketPrices(screening.base_price, screening.is_premiere);
+      let tickets = buildTickets(seatIds, seats, childTickets, wheelchairSpaces, prices);
+      if (userId !== null) {
+        const ticketsSoFar = await countCustomerTickets(userId, client);
+        tickets = applyLoyaltyDiscount({ ticketsSoFar, tickets, prices });
+      }
       const booking = await insertBookingWithReference(
         client,
         screeningId,
+        userId,
         email,
         totalPrice(tickets.map((ticket) => ticket.price)),
       );
@@ -311,15 +358,16 @@ export async function createBooking(body) {
   }
 }
 
-export async function getBooking(reference, email) {
-  if (typeof email !== "string") {
-    throw new BookingsServiceError(
-      404,
-      "BOOKING_NOT_FOUND",
-      "The requested booking was not found.",
-    );
-  }
-  const rows = await findBookingByReferenceAndEmail(reference, email);
+function customerId(user) {
+  return user?.role === "customer" ? user.id : null;
+}
+
+export async function getBooking(reference, email, user) {
+  const rows = await findBookingByReferenceAndAccess(
+    reference,
+    email,
+    customerId(user),
+  );
   if (rows.length === 0) {
     throw new BookingsServiceError(
       404,
@@ -330,13 +378,19 @@ export async function getBooking(reference, email) {
   return toBookingResponse(rows[0], rows, true);
 }
 
-export async function payBooking(reference, body) {
-  const { email } = validatePaymentBody(body);
+export async function payBooking(reference, body, user) {
+  const ownerId = customerId(user);
+  const { email } = validatePaymentBody(body, ownerId !== null);
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
 
-    const booking = await lockBookingForPayment(client, reference, email);
+    const booking = await lockBookingForPayment(
+      client,
+      reference,
+      email,
+      ownerId,
+    );
     if (!booking) {
       throw new BookingsServiceError(
         404,
@@ -351,7 +405,21 @@ export async function payBooking(reference, body) {
       return toBookingResponse(rows[0], rows, true);
     }
 
-    if (booking.status !== "held" || booking.hold_expired) {
+    if (
+      booking.status === "reserved" &&
+      booking.reservation_expired
+    ) {
+      throw new BookingsServiceError(
+        409,
+        "RESERVATION_EXPIRED",
+        "The reservation payment deadline has passed.",
+      );
+    }
+
+    if (
+      (booking.status !== "held" && booking.status !== "reserved") ||
+      (booking.status === "held" && booking.hold_expired)
+    ) {
       throw new BookingsServiceError(
         409,
         "HOLD_EXPIRED",
@@ -386,4 +454,178 @@ export async function payBooking(reference, body) {
   } finally {
     client.release();
   }
+}
+
+export async function reserveBooking(reference, userId) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    try {
+      const booking = await lockBookingForReservation(client, reference);
+      if (!booking || booking.user_id !== userId) {
+        throw new BookingsServiceError(
+          404,
+          "BOOKING_NOT_FOUND",
+          "The requested booking was not found.",
+        );
+      }
+
+      if (booking.status === "reserved") {
+        if (booking.reservation_expired) {
+          throw new BookingsServiceError(
+            409,
+            "RESERVATION_EXPIRED",
+            "The reservation payment deadline has passed.",
+          );
+        }
+        const rows = await findBookingResponseById(client, booking.id);
+        await client.query("COMMIT");
+        return toBookingResponse(rows[0], rows, true);
+      }
+
+      if (booking.status === "paid") {
+        throw new BookingsServiceError(
+          409,
+          "BOOKING_ALREADY_PAID",
+          "The booking has already been paid.",
+        );
+      }
+
+      if (booking.status !== "held" || booking.hold_expired) {
+        throw new BookingsServiceError(
+          409,
+          "HOLD_EXPIRED",
+          "The booking hold has expired.",
+        );
+      }
+
+      if (booking.sales_closed) {
+        throw new BookingsServiceError(
+          409,
+          "SALES_CLOSED",
+          "Sales for this screening have closed.",
+        );
+      }
+
+      if (booking.reservation_closed) {
+        throw new BookingsServiceError(
+          409,
+          "RESERVATION_CLOSED",
+          "Reservations close 2 hours before the screening. Pay now instead.",
+        );
+      }
+
+      await updateBookingReservation(client, booking.id);
+      const rows = await findBookingResponseById(client, booking.id);
+      await client.query("COMMIT");
+      return toBookingResponse(rows[0], rows, true);
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    }
+  } finally {
+    client.release();
+  }
+}
+
+export async function cancelBooking(reference, userId) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const booking = await lockBookingForCancellation(
+      client,
+      reference,
+      userId,
+    );
+    if (!booking) {
+      throw new BookingsServiceError(
+        404,
+        "BOOKING_NOT_FOUND",
+        "The requested booking was not found.",
+      );
+    }
+
+    if (booking.status === "cancelled") {
+      const rows = await findBookingResponseById(client, booking.id);
+      await client.query("COMMIT");
+      return toBookingResponse(rows[0], rows, true);
+    }
+
+    if (booking.response_status === "expired" || booking.status === "paid") {
+      const status = booking.response_status;
+      throw new BookingsServiceError(
+        409,
+        "BOOKING_NOT_CANCELLABLE",
+        "The booking cannot be cancelled.",
+        { status },
+      );
+    }
+
+    await client.query(
+      "UPDATE bookings SET status = 'cancelled' WHERE id = $1",
+      [booking.id],
+    );
+    await deleteTicketsForBookings(client, [booking.id]);
+
+    const rows = await findBookingResponseById(client, booking.id);
+    await client.query("COMMIT");
+    return toBookingResponse(rows[0], rows, true);
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function getMyBookings(userId) {
+  const rows = await findBookingsForCustomer(userId);
+  const bookingsById = new Map();
+  for (const row of rows) {
+    let booking = bookingsById.get(row.id);
+    if (!booking) {
+      booking = {
+        upcoming: row.is_upcoming,
+        item: {
+          reference: row.reference,
+          status: row.response_status,
+          paymentDeadline: row.payment_deadline
+            ? new Date(row.payment_deadline).toISOString()
+            : null,
+          paidAt: row.paid_at ? new Date(row.paid_at).toISOString() : null,
+          totalPrice: Number(row.total_price),
+          screening: {
+            id: row.screening_id,
+            startsAt: new Date(row.starts_at).toISOString(),
+            movie: {
+              id: row.movie_id,
+              title: row.movie_title,
+              posterUrl: row.poster_url,
+            },
+            theatre: { name: row.theatre_name, city: row.theatre_city },
+            hall: { name: row.hall_name },
+          },
+        },
+        tickets: [],
+      };
+      bookingsById.set(row.id, booking);
+    }
+    if (row.seat_id !== null || row.is_wheelchair) booking.tickets.push(row);
+  }
+
+  const result = { upcoming: [], past: [] };
+  for (const booking of bookingsById.values()) {
+    Object.assign(booking.item, toBookingTicketResponse(booking.tickets));
+    result[booking.upcoming ? "upcoming" : "past"].push(booking.item);
+  }
+  return result;
+}
+
+export async function getMyLoyalty(userId) {
+  const ticketsCounted = await countCustomerTickets(userId);
+  return {
+    ticketsCounted,
+    ticketsUntilDiscount: 10 - (ticketsCounted % 10),
+  };
 }

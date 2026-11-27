@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { getMyLoyalty } from "../api/me.js";
+import { useAuth } from "../auth/useAuth.js";
 import { requiresAgeCheck } from "../utils/ageRating.js";
 import { formatPrice } from "../utils/format.js";
 import { MAX_TICKETS, ticketsTotal } from "../utils/tickets.js";
@@ -9,6 +11,37 @@ const GOLD_BUTTON_CLASSES =
   "rounded-full bg-rio-gold px-6 py-2.5 font-semibold text-rio-black transition-colors hover:bg-rio-gold-light disabled:cursor-not-allowed disabled:opacity-50";
 const TEXT_BUTTON_CLASSES =
   "rounded-sm text-sm font-semibold text-rio-gold underline-offset-4 hover:underline";
+
+// Hint only (OQ-005): the price from the hold is the real one, so the total is not changed here.
+function loyaltyHintText(ticketsUntilDiscount, ticketCount, adultTickets, wheelchairSpaces) {
+  if (ticketCount >= ticketsUntilDiscount) {
+    // Child tickets count toward the position but never get the discount.
+    return adultTickets > 0 || wheelchairSpaces > 0
+      ? "One ticket in this order gets 50 % off (every 10th ticket). The final price is shown after you continue."
+      : "Child tickets don't get the 10th-ticket discount — add an adult ticket to use it.";
+  }
+  return ticketsUntilDiscount === 1
+    ? "Your next ticket is 50 % off"
+    : `${ticketsUntilDiscount} more tickets until 50 % off`;
+}
+
+function LoyaltyHint({ ticketCount, adultTickets, wheelchairSpaces }) {
+  const [loyalty, setLoyalty] = useState(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    // A failed request only hides the hint.
+    getMyLoyalty({ signal: controller.signal }).then(setLoyalty, () => {});
+    return () => controller.abort();
+  }, []);
+
+  if (!loyalty) return null;
+  return (
+    <p role="status" data-testid="loyalty-hint" className="text-xs text-rio-gold-light">
+      {loyaltyHintText(loyalty.ticketsUntilDiscount, ticketCount, adultTickets, wheelchairSpaces)}
+    </p>
+  );
+}
 
 function SelectionSummary({
   screeningId,
@@ -28,6 +61,9 @@ function SelectionSummary({
   alert = null,
 }) {
   const [step, setStep] = useState("seats");
+  const { user } = useAuth();
+  // The server books a customer under the account e-mail, so customers skip the e-mail field.
+  const accountEmail = user?.role === "customer" ? user.email : null;
   const [email, setEmail] = useState("");
   // A counter, not a boolean: the dialog closes natively and its close event arrives
   // asynchronously, so a mirrored "open" state could still be true when Continue is clicked again.
@@ -54,7 +90,7 @@ function SelectionSummary({
 
   function handleSubmit(event) {
     event.preventDefault();
-    if (!submitting) onHold(email.trim());
+    if (!submitting) onHold((accountEmail ?? email).trim());
   }
 
   return (
@@ -142,6 +178,14 @@ function SelectionSummary({
         )}
       </div>
 
+      {accountEmail && (
+        <LoyaltyHint
+          ticketCount={ticketCount}
+          adultTickets={ticketTypes.adult}
+          wheelchairSpaces={wheelchairSpaces}
+        />
+      )}
+
       {alert && (
         <p role="alert" className="text-sm text-red-300">
           {alert.text}
@@ -150,32 +194,36 @@ function SelectionSummary({
 
       {showEmailStep ? (
         <form onSubmit={handleSubmit} noValidate className="space-y-3">
-          <div className="space-y-1">
-            <label htmlFor="booking-email" className="block text-sm font-semibold text-rio-gold-light">
-              E-mail for your tickets
-            </label>
-            <input
-              id="booking-email"
-              type="email"
-              autoComplete="email"
-              // The "Continue" button that had focus is gone once this step shows.
-              autoFocus
-              required
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              aria-invalid={fieldErrors.email ? true : undefined}
-              aria-describedby={fieldErrors.email ? "booking-email-error" : undefined}
-              className="w-full rounded-lg border border-rio-gold/40 bg-rio-black px-3 py-2 text-white focus:border-rio-gold"
-            />
-            {fieldErrors.email && (
-              <p id="booking-email-error" className="text-sm text-red-300">
-                {fieldErrors.email}
-              </p>
-            )}
-          </div>
+          {!accountEmail && (
+            <div className="space-y-1">
+              <label htmlFor="booking-email" className="block text-sm font-semibold text-rio-gold-light">
+                E-mail for your tickets
+              </label>
+              <input
+                id="booking-email"
+                type="email"
+                autoComplete="email"
+                // The "Continue" button that had focus is gone once this step shows.
+                autoFocus
+                required
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                aria-invalid={fieldErrors.email ? true : undefined}
+                aria-describedby={fieldErrors.email ? "booking-email-error" : undefined}
+                className="w-full rounded-lg border border-rio-gold/40 bg-rio-black px-3 py-2 text-white focus:border-rio-gold"
+              />
+              {fieldErrors.email && (
+                <p id="booking-email-error" className="text-sm text-red-300">
+                  {fieldErrors.email}
+                </p>
+              )}
+            </div>
+          )}
           <div className="flex items-center gap-4 lg:flex-col lg:items-stretch lg:gap-2">
             <button
               type="submit"
+              // Without the e-mail field, focus moves here from the "Continue" button.
+              autoFocus={accountEmail !== null}
               disabled={submitting}
               className={`${GOLD_BUTTON_CLASSES} disabled:cursor-wait`}
             >
